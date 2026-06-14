@@ -1,0 +1,803 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fiche de Renseignement – LIA Bénin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #e8eaf6;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 30px 15px;
+    }
+
+    .page {
+      background: #ffffff;
+      width: 100%;
+      max-width: 860px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 40px rgba(26,45,125,0.18);
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: linear-gradient(135deg, #1a2d7d 0%, #0d6eb8 60%, #1a2d7d 100%);
+      padding: 28px 36px 20px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      position: relative;
+    }
+
+    .header::after {
+      content: '';
+      display: block;
+      height: 6px;
+      background: linear-gradient(90deg, #f5a623, #ffe082, #f5a623);
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+    }
+
+    .logo-circle {
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      border: 4px solid #f5a623;
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-circle img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    /* Placeholder shown when no logo file is found */
+    .logo-circle .logo-placeholder {
+      font-size: 11px;
+      color: #1a2d7d;
+      text-align: center;
+      padding: 8px;
+      font-weight: bold;
+      line-height: 1.4;
+    }
+
+    .header-text {
+      color: #fff;
+      flex: 1;
+    }
+
+    .header-text .ministry {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: #ffe082;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .header-text h1 {
+      font-size: 22px;
+      font-weight: 800;
+      line-height: 1.2;
+      margin-bottom: 4px;
+    }
+
+    .header-text .tagline {
+      font-size: 13px;
+      font-style: italic;
+      color: #bbdefb;
+    }
+
+    /* ── FORM TITLE BAND ── */
+    .form-title-band {
+      background: #f5a623;
+      text-align: center;
+      padding: 10px 20px;
+    }
+
+    .form-title-band h2 {
+      font-size: 16px;
+      font-weight: 800;
+      color: #1a2d7d;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+
+    /* ── FORM BODY ── */
+    .form-body {
+      padding: 28px 36px 36px;
+    }
+
+    /* Photo upload block */
+    .photo-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 20px;
+    }
+
+    .photo-upload {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .photo-box {
+      width: 110px;
+      height: 130px;
+      border: 2px dashed #0d6eb8;
+      border-radius: 8px;
+      background: #e8eaf6;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.2s;
+    }
+
+    .photo-box:hover { background: #c5cae9; }
+
+    .photo-box svg { color: #0d6eb8; }
+
+    .photo-box span {
+      font-size: 11px;
+      color: #1a2d7d;
+      font-weight: 600;
+      margin-top: 6px;
+      text-align: center;
+    }
+
+    #photo-input { display: none; }
+
+    #photo-preview {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      position: absolute;
+      top: 0; left: 0;
+      display: none;
+      border-radius: 6px;
+    }
+
+    .photo-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1a2d7d;
+    }
+
+    /* Grid layout */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px 24px;
+    }
+
+    .full-width { grid-column: 1 / -1; }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 700;
+      color: #1a2d7d;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .field label .req {
+      color: #e53935;
+      margin-left: 2px;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      border: 1.5px solid #9fa8da;
+      border-radius: 6px;
+      padding: 9px 12px;
+      font-size: 14px;
+      color: #1a237e;
+      background: #f5f6fc;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+      width: 100%;
+      font-family: inherit;
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      border-color: #0d6eb8;
+      box-shadow: 0 0 0 3px rgba(13,110,184,0.15);
+      background: #fff;
+    }
+
+    .field textarea { resize: vertical; min-height: 80px; }
+
+    /* File input style */
+    .file-field input[type="file"] {
+      padding: 6px 10px;
+      font-size: 13px;
+      background: #f5f6fc;
+    }
+
+    /* Section separator */
+    .section-sep {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 6px 0 2px;
+    }
+
+    .section-sep span {
+      font-size: 12px;
+      font-weight: 800;
+      color: #0d6eb8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      white-space: nowrap;
+    }
+
+    .section-sep::before,
+    .section-sep::after {
+      content: '';
+      flex: 1;
+      height: 1.5px;
+      background: #9fa8da;
+    }
+
+    /* Submit button */
+    .submit-row {
+      margin-top: 28px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .btn-submit {
+      background: linear-gradient(135deg, #1a2d7d, #0d6eb8);
+      color: #fff;
+      border: none;
+      border-radius: 30px;
+      padding: 13px 52px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(13,110,184,0.35);
+      transition: transform 0.15s, box-shadow 0.15s;
+      text-transform: uppercase;
+    }
+
+    .btn-submit:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(13,110,184,0.45);
+    }
+
+    /* Footer */
+    .footer {
+      background: #1a2d7d;
+      color: #bbdefb;
+      text-align: center;
+      padding: 12px 20px;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+    }
+
+    .footer strong { color: #ffe082; }
+
+    /* ── COMPLÉTER MES INFORMATIONS ── */
+    .complete-wrapper { border-top: 2px solid #e8eaf6; }
+
+    .btn-toggle {
+      width: 100%;
+      padding: 14px 36px;
+      background: #f5f6fc;
+      border: none;
+      text-align: left;
+      cursor: pointer;
+      font-size: 13px;
+      color: #555;
+      font-family: inherit;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-toggle:hover  { background: #e8eaf6; }
+    .btn-toggle strong { color: #0d6eb8; }
+    .btn-toggle svg    { flex-shrink: 0; color: #0d6eb8; }
+
+    #completePanel { padding: 24px 36px 32px; background: #fafbff; }
+
+    .c-intro { font-size: 14px; color: #555; margin: 0 0 16px; }
+
+    .c-row { display: flex; gap: 12px; align-items: flex-end; }
+
+    .btn-lookup {
+      background: linear-gradient(135deg, #1a2d7d, #0d6eb8);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 22px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+      font-family: inherit;
+      transition: opacity 0.2s;
+    }
+    .btn-lookup:hover    { opacity: 0.88; }
+    .btn-lookup:disabled { opacity: 0.55; cursor: default; }
+
+    @media (max-width: 600px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .full-width { grid-column: 1; }
+      .header { flex-direction: column; text-align: center; }
+      .c-row  { flex-direction: column; }
+      .btn-lookup { width: 100%; }
+      .btn-toggle { padding: 14px 20px; }
+      #completePanel { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo-circle">
+      <!--
+        Remplacez "logo_IFL.png" par le chemin réel de votre logo.
+        Exemple : src="logo_IFL.png"  ou  src="images/logo.png"
+      -->
+      <img src="image.png" alt="Logo IFL"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+      <div class="logo-placeholder" style="display:none;">
+        IFL<br/>Logo ici
+      </div>
+    </div>
+    <div class="header-text">
+      <div class="ministry">Ministère de la Vie Chrétienne Profonde</div>
+      <h1>Ligue Internationale<br/>de l'Amitié – Bénin</h1>
+      <div class="tagline">IFL… Influencing lives for Christ</div>
+    </div>
+  </div>
+
+  <!-- TITLE BAND -->
+  <div class="form-title-band">
+    <h2>Fiche de Renseignement du Personnel</h2>
+  </div>
+
+  <!-- FORM -->
+  <div class="form-body">
+
+    <!-- Photo upload (top-right) -->
+    <div class="photo-row">
+      <div class="photo-upload">
+        <label class="photo-label">Photo</label>
+        <div class="photo-box" onclick="document.getElementById('photo-input').click()">
+          <img id="photo-preview" alt="Aperçu photo" />
+          <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.118
+                 a7.5 7.5 0 0115 0A17.933 17.933 0 0112 21.75c-2.676
+                 0-5.216-.584-7.5-1.632z"/>
+          </svg>
+          <span>Cliquer pour<br/>ajouter</span>
+        </div>
+        <input type="file" id="photo-input" accept="image/*"
+               onchange="previewPhoto(event)" />
+      </div>
+    </div>
+
+    <form id="mainForm" novalidate>
+      <div class="grid-2">
+
+        <!-- ── Identité ── -->
+        <div class="section-sep"><span>Identité</span></div>
+
+        <div class="field">
+          <label>Nom <span class="req">*</span></label>
+          <input type="text" name="nom" placeholder="Votre nom de famille" required />
+        </div>
+
+        <div class="field">
+          <label>Prénoms <span class="req">*</span></label>
+          <input type="text" name="prenoms" placeholder="Vos prénoms" required />
+        </div>
+
+        <div class="field">
+          <label>Adresse e-mail <span class="req">*</span></label>
+          <input type="email" name="email" placeholder="exemple@email.com" required />
+        </div>
+
+        <div class="field">
+          <label>Adresse <span class="req">*</span></label>
+          <input type="text" name="adresse" placeholder="Quartier, ville…" required />
+        </div>
+
+        <div class="field">
+          <label>Numéro de téléphone 1 <span class="req">*</span></label>
+          <input type="tel" name="tel1" placeholder="+229 XX XX XX XX" required />
+        </div>
+
+        <div class="field">
+          <label>Numéro de téléphone 2</label>
+          <input type="tel" name="tel2" placeholder="+229 XX XX XX XX" />
+        </div>
+
+        <!-- ── Profession ── -->
+        <div class="section-sep"><span>Profession</span></div>
+
+        <div class="field">
+          <label>Profession <span class="req">*</span></label>
+          <input type="text" name="profession" placeholder="Ex : Médecin, Enseignant, Ingénieur…" required />
+        </div>
+
+        <div class="field">
+          <label>Secteur d'activité</label>
+          <input type="text" name="secteur" placeholder="Ex : Éducation, Santé, Commerce…" />
+        </div>
+
+        <div class="field">
+          <label>Poste actuel <span class="req">*</span></label>
+          <input type="text" name="poste" placeholder="Ex : Directeur, Enseignant…" required />
+        </div>
+
+        <div class="field">
+          <label>Niveau d'étude <span class="req">*</span></label>
+          <input type="text" name="niveau" placeholder="Ex : Licence, Master, Doctorat…" required />
+        </div>
+
+        <div class="field">
+          <label>Structure ou Service <span class="req">*</span></label>
+          <input type="text" name="structure" placeholder="Nom de l'organisation / service" required />
+        </div>
+
+        <!-- ── Localisation ── -->
+        <div class="section-sep"><span>Localisation</span></div>
+
+        <div class="field">
+          <label>Région</label>
+          <input type="text" name="region" placeholder="Ex : Atlantique, Borgou…" />
+        </div>
+
+        <div class="field">
+          <label>District</label>
+          <input type="text" name="district" placeholder="Ex : Cotonou, Parakou…" />
+        </div>
+
+        <!-- ── Observation & Documents ── -->
+        <div class="section-sep"><span>Documents & Observation</span></div>
+
+        <div class="field full-width">
+          <label>Observation</label>
+          <textarea name="observation" placeholder="Remarques, informations complémentaires…"></textarea>
+        </div>
+
+        <div class="field file-field">
+          <label>CV <span class="req">*</span></label>
+          <input type="file" name="cv" accept=".pdf,.doc,.docx" required />
+        </div>
+
+      </div><!-- /grid-2 -->
+
+      <div class="submit-row">
+        <button type="submit" class="btn-submit">Soumettre la fiche</button>
+      </div>
+    </form>
+
+    <!-- ── Message de succès ── -->
+    <div id="successMsg" style="display:none;text-align:center;padding:44px 20px">
+      <svg width="68" height="68" fill="none" viewBox="0 0 24 24" stroke="#0d6eb8" stroke-width="1.5" style="margin-bottom:16px">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>
+      </svg>
+      <h3 style="color:#1a2d7d;font-size:22px;margin:0 0 10px;font-family:'Segoe UI',Arial,sans-serif">Fiche soumise avec succès !</h3>
+      <p style="color:#555;font-size:15px;margin:0 0 24px;font-family:'Segoe UI',Arial,sans-serif">
+        Vos informations ont bien été enregistrées.<br/>Un e-mail de confirmation vous a été envoyé.
+      </p>
+      <div style="display:inline-block;background:#f5f6fc;border-left:4px solid #f5a623;padding:18px 28px;border-radius:8px;text-align:left;max-width:420px">
+        <p style="margin:0;color:#1a2d7d;font-weight:700;font-size:14px;font-family:'Segoe UI',Arial,sans-serif">
+          Pour modifier vos informations ou vous renseigner davantage :
+        </p>
+        <p style="margin:8px 0 0;color:#555;font-size:14px;font-family:'Segoe UI',Arial,sans-serif">
+          Veuillez contacter <strong>Nicaise ATEKOSSI</strong>
+        </p>
+        <p style="margin:6px 0 0;font-size:18px;font-weight:700;color:#0d6eb8;font-family:'Segoe UI',Arial,sans-serif">
+          +229 0197082602
+        </p>
+      </div>
+    </div>
+
+  </div><!-- /form-body -->
+
+  <!-- ── COMPLÉTER MES INFORMATIONS ── -->
+  <div class="complete-wrapper">
+    <button class="btn-toggle" onclick="toggleComplete(this)">
+      <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487a2.1 2.1 0 1 1 2.97 2.97L7.5 19.79l-4 1 1-4 12.362-12.303z"/>
+      </svg>
+      Vous avez déjà soumis votre fiche ? &nbsp;<strong>Compléter / mettre à jour mes informations</strong>
+    </button>
+
+    <div id="completePanel" style="display:none">
+
+      <!-- Étape 1 : saisie email -->
+      <div id="cStep1">
+        <p class="c-intro">Saisissez votre adresse e-mail pour retrouver votre fiche et compléter les champs manquants.</p>
+        <div class="c-row">
+          <div class="field" style="flex:1">
+            <label>Adresse e-mail <span class="req">*</span></label>
+            <input type="email" id="lookupEmailInput" placeholder="exemple@email.com" />
+          </div>
+          <button class="btn-lookup" id="btnLookup" onclick="doLookup()">Rechercher ma fiche</button>
+        </div>
+        <p id="lookupError" style="color:#e53935;font-size:13px;margin-top:8px;display:none"></p>
+      </div>
+
+      <!-- Étape 2 : champs manquants -->
+      <div id="cStep2" style="display:none">
+        <p class="c-intro" id="cStep2Msg"></p>
+        <form id="updateForm" novalidate>
+          <div class="grid-2" id="missingFieldsGrid"></div>
+          <div class="submit-row" id="updateSubmitRow" style="margin-top:20px;display:none">
+            <button type="submit" class="btn-submit">Mettre à jour ma fiche</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Étape 3 : confirmation mise à jour -->
+      <div id="cStep3" style="display:none;text-align:center;padding:28px 0">
+        <svg width="56" height="56" fill="none" viewBox="0 0 24 24" stroke="#0d6eb8" stroke-width="1.5" style="margin-bottom:10px">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>
+        </svg>
+        <p style="color:#1a2d7d;font-size:17px;font-weight:700;margin:0 0 6px">Fiche mise à jour avec succès !</p>
+        <p style="color:#555;font-size:14px">Vos informations ont été enregistrées immédiatement dans le système.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <div class="footer">
+    <strong>Ligue Internationale de l'Amitié – Bénin</strong>
+    &nbsp;|&nbsp; IFL… Influencing lives for Christ
+    <div style="margin-top:8px;font-size:11px;color:#90caf9;display:flex;justify-content:center;align-items:center;gap:20px;flex-wrap:wrap;line-height:1.8">
+      <span>
+        Créé par <strong style="color:#ffe082">ABM Company</strong>
+        &nbsp;·&nbsp;
+        <a href="https://abmcy.com" target="_blank" rel="noopener"
+           style="color:#ffe082;text-decoration:underline">abmcy.com</a>
+        &nbsp;·&nbsp;
+        <a href="https://mahu.card" target="_blank" rel="noopener"
+           style="color:#ffe082;text-decoration:underline">mahu.card</a>
+      </span>
+      <span>Géré par <strong style="color:#ffe082">Nicaise ATEKOSSI</strong></span>
+    </div>
+  </div>
+
+</div><!-- /page -->
+
+<script>
+  // ── À remplacer par l'URL de votre Apps Script déployé ──────────────────
+  var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbznkkoociS8S4oYbnfbziqwbyX4vNIyGn_xFgoYtDuQwhe7Rw6-B31Mz78wJxc3j54YKQ/exec';
+
+  // ── Aperçu photo ─────────────────────────────────────────────────────────
+  function previewPhoto(event) {
+    var file = event.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      var preview = document.getElementById('photo-preview');
+      preview.src = e.target.result;
+      preview.style.display = 'block';
+      var svg  = preview.parentNode.querySelector('svg');
+      var span = preview.parentNode.querySelector('span');
+      if (svg)  svg.style.display  = 'none';
+      if (span) span.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ── Soumission ────────────────────────────────────────────────────────────
+  document.getElementById('mainForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    // Validation des champs obligatoires
+    var inputs = this.querySelectorAll('[required]');
+    var valid  = true;
+    inputs.forEach(function(el) {
+      el.style.borderColor = '';
+      var empty = el.type === 'file'
+        ? (!el.files || el.files.length === 0)
+        : !el.value.trim();
+      if (empty) { el.style.borderColor = '#e53935'; valid = false; }
+    });
+    if (!valid) {
+      alert('Veuillez remplir tous les champs obligatoires (*).');
+      return;
+    }
+
+    // Collecte des champs texte (hors fichiers)
+    var fd   = new FormData(this);
+    var data = {};
+    fd.forEach(function(value, key) {
+      if (typeof value === 'string') data[key] = value;
+    });
+
+    // Indicateur d'envoi
+    var btn = document.querySelector('.btn-submit');
+    btn.textContent = 'Envoi en cours…';
+    btn.disabled    = true;
+
+    // Envoi vers Apps Script
+    try {
+      await fetch(SCRIPT_URL, {
+        method:  'POST',
+        mode:    'no-cors',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:    new URLSearchParams(data).toString()
+      });
+    } catch (err) { /* on affiche le succès même en cas d'erreur réseau mineure */ }
+
+    // Affichage du message de succès
+    document.querySelector('.photo-row').style.display  = 'none';
+    document.getElementById('mainForm').style.display   = 'none';
+    document.getElementById('successMsg').style.display = 'block';
+  });
+
+  // ── Compléter / Mettre à jour les informations ───────────────────────────
+  var FIELD_SPEC = {
+    nom:         { label: 'Nom',                 type: 'text'     },
+    prenoms:     { label: 'Prénoms',             type: 'text'     },
+    adresse:     { label: 'Adresse',             type: 'text'     },
+    tel1:        { label: 'Numéro de téléphone 1', type: 'tel'    },
+    tel2:        { label: 'Numéro de téléphone 2', type: 'tel'    },
+    secteur:     { label: "Secteur d'activité",  type: 'text'     },
+    poste:       { label: 'Poste actuel',         type: 'text'    },
+    niveau:      { label: "Niveau d'étude",      type: 'text'     },
+    structure:   { label: 'Structure ou Service', type: 'text'    },
+    region:      { label: 'Région',              type: 'text'     },
+    district:    { label: 'District',            type: 'text'     },
+    observation: { label: 'Observation',         type: 'textarea' },
+    profession:  { label: 'Profession',          type: 'text'     }
+  };
+
+  var _rowIndex    = null;
+  var _lookupEmail = '';
+
+  function toggleComplete(btn) {
+    var panel = document.getElementById('completePanel');
+    var open  = panel.style.display !== 'none';
+    panel.style.display = open ? 'none' : 'block';
+  }
+
+  async function doLookup() {
+    var emailInput = document.getElementById('lookupEmailInput');
+    var errEl      = document.getElementById('lookupError');
+    var email      = emailInput.value.trim();
+    errEl.style.display = 'none';
+    emailInput.style.borderColor = '';
+
+    if (!email) {
+      emailInput.style.borderColor = '#e53935';
+      errEl.textContent = 'Veuillez saisir votre adresse e-mail.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    var btn = document.getElementById('btnLookup');
+    btn.textContent = 'Recherche…';
+    btn.disabled    = true;
+
+    try {
+      var res  = await fetch(SCRIPT_URL + '?action=lookup&email=' + encodeURIComponent(email));
+      var data = await res.json();
+
+      if (data.status === 'found') {
+        _lookupEmail = email;
+        _rowIndex    = data.rowIndex;
+
+        if (!data.missing || data.missing.length === 0) {
+          document.getElementById('cStep2Msg').textContent =
+            'Votre fiche est déjà complète ! Aucun champ manquant.';
+          document.getElementById('missingFieldsGrid').innerHTML = '';
+          document.getElementById('updateSubmitRow').style.display = 'none';
+        } else {
+          buildUpdateForm(data.missing);
+          document.getElementById('cStep2Msg').textContent =
+            data.missing.length + ' champ(s) manquant(s). Veuillez les compléter ci-dessous :';
+          document.getElementById('updateSubmitRow').style.display = 'flex';
+        }
+        document.getElementById('cStep1').style.display = 'none';
+        document.getElementById('cStep2').style.display = 'block';
+
+      } else {
+        errEl.textContent = 'Aucune fiche trouvée pour cet e-mail. Vérifiez ou soumettez une nouvelle fiche.';
+        errEl.style.display = 'block';
+        emailInput.style.borderColor = '#e53935';
+      }
+    } catch (err) {
+      errEl.textContent = 'Erreur de connexion. Veuillez réessayer.';
+      errEl.style.display = 'block';
+    }
+
+    btn.textContent = 'Rechercher ma fiche';
+    btn.disabled    = false;
+  }
+
+  function buildUpdateForm(missing) {
+    var grid = document.getElementById('missingFieldsGrid');
+    grid.innerHTML = '';
+    missing.forEach(function(f) {
+      var spec = FIELD_SPEC[f.key] || { label: f.label, type: 'text' };
+      var div  = document.createElement('div');
+      div.className = 'field' + (f.key === 'observation' ? ' full-width' : '');
+      if (spec.type === 'textarea') {
+        div.innerHTML = '<label>' + spec.label + ' <span class="req">*</span></label>'
+          + '<textarea name="' + f.key + '" required placeholder="' + spec.label + '…"></textarea>';
+      } else {
+        div.innerHTML = '<label>' + spec.label + ' <span class="req">*</span></label>'
+          + '<input type="' + spec.type + '" name="' + f.key + '" required placeholder="' + spec.label + '…" />';
+      }
+      grid.appendChild(div);
+    });
+  }
+
+  document.getElementById('updateForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    var inputs = this.querySelectorAll('[required]');
+    var valid  = true;
+    inputs.forEach(function(el) {
+      el.style.borderColor = '';
+      if (!el.value.trim()) { el.style.borderColor = '#e53935'; valid = false; }
+    });
+    if (!valid) { alert('Veuillez remplir tous les champs manquants.'); return; }
+
+    var fd   = new FormData(this);
+    var data = { action: 'update', rowIndex: _rowIndex, email: _lookupEmail };
+    fd.forEach(function(v, k) { if (typeof v === 'string') data[k] = v; });
+
+    var btn = this.querySelector('.btn-submit');
+    btn.textContent = 'Mise à jour…';
+    btn.disabled    = true;
+
+    try {
+      await fetch(SCRIPT_URL, {
+        method:  'POST',
+        mode:    'no-cors',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body:    new URLSearchParams(data).toString()
+      });
+    } catch (err) {}
+
+    document.getElementById('cStep2').style.display = 'none';
+    document.getElementById('cStep3').style.display = 'block';
+  });
+</script>
+
+</body>
+</html>
