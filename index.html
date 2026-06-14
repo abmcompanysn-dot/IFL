@@ -499,8 +499,10 @@
         </div>
 
         <div class="field file-field">
-          <label>CV <span class="req">*</span></label>
-          <input type="file" name="cv" accept=".pdf,.doc,.docx" required />
+          <label>CV / Document <span class="req">*</span></label>
+          <input type="file" name="cv"
+                 accept=".pdf,.doc,.docx,.odt,.jpg,.jpeg,.png,.gif,.bmp,.xlsx,.pptx"
+                 required />
         </div>
 
       </div><!-- /grid-2 -->
@@ -622,6 +624,16 @@
     reader.readAsDataURL(file);
   }
 
+  // ── Conversion fichier → base64 ───────────────────────────────────────────
+  function fileToBase64(file) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload  = function(ev) { resolve(ev.target.result.split(',')[1]); };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
   // ── Soumission ────────────────────────────────────────────────────────────
   document.getElementById('mainForm').addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -641,27 +653,45 @@
       return;
     }
 
-    // Collecte des champs texte (hors fichiers)
+    // Indicateur d'envoi
+    var btn = document.querySelector('#mainForm .btn-submit');
+    btn.textContent = 'Envoi en cours…';
+    btn.disabled    = true;
+
+    // Collecte des champs texte
     var fd   = new FormData(this);
     var data = {};
     fd.forEach(function(value, key) {
       if (typeof value === 'string') data[key] = value;
     });
 
-    // Indicateur d'envoi
-    var btn = document.querySelector('.btn-submit');
-    btn.textContent = 'Envoi en cours…';
-    btn.disabled    = true;
+    // CV → base64
+    var cvInput = this.querySelector('input[name="cv"]');
+    if (cvInput && cvInput.files[0]) {
+      var cvFile     = cvInput.files[0];
+      data.cvData    = await fileToBase64(cvFile);
+      data.cvMime    = cvFile.type || 'application/octet-stream';
+      data.cvName    = cvFile.name;
+    }
 
-    // Envoi vers Apps Script
+    // Photo → base64
+    var photoInput = document.getElementById('photo-input');
+    if (photoInput && photoInput.files[0]) {
+      var photoFile  = photoInput.files[0];
+      data.photoData = await fileToBase64(photoFile);
+      data.photoMime = photoFile.type || 'image/jpeg';
+      data.photoName = photoFile.name;
+    }
+
+    // Envoi JSON en text/plain (compatible no-cors, lu via e.postData.contents)
     try {
       await fetch(SCRIPT_URL, {
         method:  'POST',
         mode:    'no-cors',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body:    new URLSearchParams(data).toString()
+        headers: { 'Content-Type': 'text/plain' },
+        body:    JSON.stringify(data)
       });
-    } catch (err) { /* on affiche le succès même en cas d'erreur réseau mineure */ }
+    } catch (err) {}
 
     // Affichage du message de succès
     document.querySelector('.photo-row').style.display  = 'none';

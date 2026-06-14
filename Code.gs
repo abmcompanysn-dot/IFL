@@ -1,8 +1,9 @@
 // ── Configuration ─────────────────────────────────────────────────────────
-var CONTACT_NAME  = "Nicaise ATEKOSSI";
-var CONTACT_PHONE = "+229 0197082602";
+var CONTACT_NAME       = "Nicaise ATEKOSSI";
+var CONTACT_PHONE      = "+229 0197082602";
+var UPLOAD_FOLDER_NAME = "IFL – Pièces jointes";
 
-// Colonnes 1-indexées (ordre réel du Sheet fourni par l'utilisateur)
+// Colonnes 1-indexées (ordre réel du Sheet)
 // Col1:Horodateur | Col2:Nom | Col3:Email | Col4:Adresse | Col5:Tél1 | Col6:Tél2
 // Col7:Secteur | Col8:Poste | Col9:Niveau | Col10:Structure | Col11:Région
 // Col12:District | Col13:Observation | Col14:CV | Col15:Prénoms | Col16:Photo
@@ -25,6 +26,21 @@ var COL_MAP = {
 
 var EMAIL_COL_0 = 2; // index 0-basé → col 3 du sheet (Adresse e-mail)
 
+// ── Google Drive – upload fichier ──────────────────────────────────────────
+function getOrCreateFolder(name) {
+  var folders = DriveApp.getFoldersByName(name);
+  return folders.hasNext() ? folders.next() : DriveApp.createFolder(name);
+}
+
+function saveFileToDrive(base64, mimeType, filename) {
+  var folder = getOrCreateFolder(UPLOAD_FOLDER_NAME);
+  var bytes  = Utilities.base64Decode(base64);
+  var blob   = Utilities.newBlob(bytes, mimeType || 'application/octet-stream', filename);
+  var file   = folder.createFile(blob);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return file.getUrl();
+}
+
 // ── GET : recherche d'une fiche par email ──────────────────────────────────
 function doGet(e) {
   var action = (e.parameter.action || '').toLowerCase();
@@ -38,9 +54,8 @@ function doGet(e) {
 }
 
 function lookupRecord(email) {
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data  = sheet.getDataRange().getValues();
-
+  var sheet  = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var data   = sheet.getDataRange().getValues();
   var labels = {
     nom:         'Nom',
     prenoms:     'Prénoms',
@@ -57,7 +72,6 @@ function lookupRecord(email) {
     profession:  'Profession'
   };
 
-  // Ligne 0 = en-têtes → données à partir de i = 1
   for (var i = 1; i < data.length; i++) {
     var rowEmail = (data[i][EMAIL_COL_0] || '').toString().toLowerCase().trim();
     if (rowEmail !== email) continue;
@@ -71,7 +85,7 @@ function lookupRecord(email) {
     return ContentService
       .createTextOutput(JSON.stringify({
         status:   'found',
-        rowIndex: i + 1,  // 1-indexé pour Sheet
+        rowIndex: i + 1,
         missing:  missing
       }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -85,7 +99,11 @@ function lookupRecord(email) {
 // ── POST : soumission nouvelle fiche OU mise à jour ────────────────────────
 function doPost(e) {
   try {
-    var p      = e.parameter;
+    // Lecture JSON (envoyé en text/plain) avec fallback url-encoded
+    var p;
+    try { p = JSON.parse(e.postData.contents); }
+    catch(ex) { p = e.parameter; }
+
     var action = (p.action || 'submit').toLowerCase();
 
     if (action === 'update') {
@@ -95,7 +113,18 @@ function doPost(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // ── Soumission initiale (ordre du Sheet) ──────────────────────────────
+    // ── Upload CV et Photo vers Google Drive ──────────────────────────────
+    var cvUrl    = '';
+    var photoUrl = '';
+
+    if (p.cvData && p.cvName) {
+      try { cvUrl = saveFileToDrive(p.cvData, p.cvMime, p.cvName); } catch(fe) {}
+    }
+    if (p.photoData && p.photoName) {
+      try { photoUrl = saveFileToDrive(p.photoData, p.photoMime, p.photoName); } catch(fe) {}
+    }
+
+    // ── Enregistrement dans le Sheet ──────────────────────────────────────
     var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
 
     sheet.appendRow([
@@ -112,9 +141,9 @@ function doPost(e) {
       p.region      || "", // Col 11 : Région
       p.district    || "", // Col 12 : District
       p.observation || "", // Col 13 : Observation
-      "",                  // Col 14 : CV (fichier – non transmis via HTML)
+      cvUrl,               // Col 14 : CV (lien Drive)
       p.prenoms     || "", // Col 15 : Prénoms
-      "",                  // Col 16 : Photo (fichier – non transmis via HTML)
+      photoUrl,            // Col 16 : Photo (lien Drive)
       p.email       || "", // Col 17 : Adresse e-mail (doublon)
       p.profession  || ""  // Col 18 : Profession
     ]);
@@ -125,7 +154,7 @@ function doPost(e) {
     MailApp.sendEmail({
       to:       ownerEmail,
       subject:  "Nouvelle fiche reçue – " + fullName,
-      htmlBody: buildOwnerEmail(p, fullName)
+      htmlBody: buildOwnerEmail(p, fullName, cvUrl, photoUrl)
     });
 
     if (p.email) {
@@ -160,22 +189,27 @@ function updateRecord(p) {
   });
 }
 
-// ── Email au responsable ──────────────────────────────────────────────────
-function buildOwnerEmail(p, fullName) {
+// ── Email au responsable (avec liens CV & Photo) ───────────────────────────
+function buildOwnerEmail(p, fullName, cvUrl, photoUrl) {
+  var cvLink    = cvUrl    ? '<a href="' + cvUrl    + '" style="color:#0d6eb8">Télécharger le CV</a>'  : '–';
+  var photoLink = photoUrl ? '<a href="' + photoUrl + '" style="color:#0d6eb8">Voir la photo</a>'      : '–';
+
   var fields = [
-    ["Nom complet",         fullName],
-    ["E-mail",              p.email       || "–"],
-    ["Adresse",             p.adresse     || "–"],
-    ["Téléphone 1",         p.tel1        || "–"],
-    ["Téléphone 2",         p.tel2        || "–"],
-    ["Profession",          p.profession  || "–"],
-    ["Secteur d'activité",  p.secteur     || "–"],
-    ["Poste actuel",        p.poste       || "–"],
-    ["Niveau d'étude",      p.niveau      || "–"],
-    ["Structure / Service", p.structure   || "–"],
-    ["Région",              p.region      || "–"],
-    ["District",            p.district    || "–"],
-    ["Observation",         p.observation || "–"]
+    ["Nom complet",          fullName],
+    ["E-mail",               p.email       || "–"],
+    ["Adresse",              p.adresse     || "–"],
+    ["Téléphone 1",          p.tel1        || "–"],
+    ["Téléphone 2",          p.tel2        || "–"],
+    ["Profession",           p.profession  || "–"],
+    ["Secteur d'activité",   p.secteur     || "–"],
+    ["Poste actuel",         p.poste       || "–"],
+    ["Niveau d'étude",       p.niveau      || "–"],
+    ["Structure / Service",  p.structure   || "–"],
+    ["Région",               p.region      || "–"],
+    ["District",             p.district    || "–"],
+    ["Observation",          p.observation || "–"],
+    ["CV",                   cvLink],
+    ["Photo",                photoLink]
   ];
 
   var rows = fields.map(function(f) {
@@ -194,7 +228,7 @@ function buildOwnerEmail(p, fullName) {
     +   '<p style="color:#ffe082;margin:6px 0 0;font-size:13px">Ligue Internationale de l\'Amitié – Bénin</p>'
     + '</div>'
     + '<div style="padding:24px 32px">'
-    +   '<p style="color:#333;font-size:15px;margin:0 0 16px">Une nouvelle fiche a été soumise par <strong>' + fullName + '</strong>.</p>'
+    +   '<p style="color:#333;font-size:15px;margin:0 0 16px">Nouvelle fiche soumise par <strong>' + fullName + '</strong>.</p>'
     +   '<table style="width:100%;border-collapse:collapse;font-size:14px">' + rows + '</table>'
     + '</div>'
     + '<div style="background:#1a2d7d;padding:14px 32px;text-align:center">'
@@ -220,19 +254,14 @@ function buildConfirmEmail(p, fullName) {
     +   '<p style="color:#333;font-size:15px;margin:14px 0 0">'
     +     'Vous venez de renseigner votre fiche auprès de la '
     +     '<strong>Ligue Internationale de l\'Amitié – Bénin</strong>. '
-    +     'Vos informations ont bien été enregistrées.'
+    +     'Vos informations et documents ont bien été enregistrés.'
     +   '</p>'
-    +   '<div style="background:#f5f6fc;border-left:4px solid #f5a623;padding:16px 22px;'
-    +     'border-radius:6px;margin-top:22px">'
+    +   '<div style="background:#f5f6fc;border-left:4px solid #f5a623;padding:16px 22px;border-radius:6px;margin-top:22px">'
     +     '<p style="margin:0;color:#1a2d7d;font-weight:700;font-size:14px">'
     +       'Pour modifier vos informations ou vous renseigner davantage :'
     +     '</p>'
-    +     '<p style="margin:8px 0 0;color:#555;font-size:14px">'
-    +       'Veuillez contacter <strong>' + CONTACT_NAME + '</strong>'
-    +     '</p>'
-    +     '<p style="margin:6px 0 0;font-size:17px;font-weight:700;color:#0d6eb8">'
-    +       CONTACT_PHONE
-    +     '</p>'
+    +     '<p style="margin:8px 0 0;color:#555;font-size:14px">Veuillez contacter <strong>' + CONTACT_NAME + '</strong></p>'
+    +     '<p style="margin:6px 0 0;font-size:17px;font-weight:700;color:#0d6eb8">' + CONTACT_PHONE + '</p>'
     +   '</div>'
     + '</div>'
     + '<div style="background:#1a2d7d;padding:14px 32px;text-align:center">'
