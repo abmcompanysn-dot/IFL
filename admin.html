@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Administration – IFL Bénin</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; min-height: 100vh; background: #f0f2ff; }
+
+    /* ── LOGIN ── */
+    #loginPage {
+      min-height: 100vh; display: flex; align-items: center;
+      justify-content: center; padding: 20px;
+      background: linear-gradient(135deg, #1a2d7d 0%, #0d6eb8 60%, #1a2d7d 100%);
+    }
+    .login-card {
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 12px 48px rgba(26,45,125,.35);
+      padding: 40px 36px; width: 100%; max-width: 400px; text-align: center;
+    }
+    .login-logo {
+      width: 86px; height: 86px; border-radius: 50%;
+      border: 4px solid #0d6eb8; overflow: hidden;
+      margin: 0 auto 18px; background: #e8eaf6;
+    }
+    .login-logo img { width: 100%; height: 100%; object-fit: cover; }
+    .login-card h1 { font-size: 20px; font-weight: 800; color: #1a2d7d; margin-bottom: 4px; }
+    .login-sub { font-size: 13px; color: #777; margin-bottom: 28px; }
+    .lf { text-align: left; margin-bottom: 16px; }
+    .lf label { display: block; font-size: 12px; font-weight: 700; color: #1a2d7d;
+      text-transform: uppercase; letter-spacing: .4px; margin-bottom: 5px; }
+    .lf input {
+      width: 100%; border: 1.5px solid #9fa8da; border-radius: 8px;
+      padding: 10px 14px; font-size: 15px; color: #1a237e;
+      background: #f5f6fc; outline: none; font-family: inherit;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .lf input:focus { border-color: #0d6eb8; box-shadow: 0 0 0 3px rgba(13,110,184,.15); background: #fff; }
+    #loginError { color: #e53935; font-size: 13px; margin: 0 0 14px; display: none; }
+    .btn-login {
+      width: 100%; background: linear-gradient(135deg, #1a2d7d, #0d6eb8);
+      color: #fff; border: none; border-radius: 30px; padding: 13px;
+      font-size: 15px; font-weight: 700; cursor: pointer; letter-spacing: .5px;
+      box-shadow: 0 4px 16px rgba(13,110,184,.35);
+      transition: transform .15s, box-shadow .15s; font-family: inherit;
+    }
+    .btn-login:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(13,110,184,.45); }
+    .btn-login:disabled { opacity: .6; cursor: default; transform: none; }
+    .login-badge { margin-top: 22px; font-size: 11px; color: #aaa; }
+
+    /* ── DASHBOARD ── */
+    #dashPage { min-height: 100vh; }
+    .topbar {
+      background: linear-gradient(135deg, #1a2d7d, #0d6eb8);
+      padding: 0 20px; height: 60px; display: flex; align-items: center; gap: 14px;
+      position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 12px rgba(26,45,125,.3);
+    }
+    .tb-logo { width: 40px; height: 40px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.4); overflow: hidden; flex-shrink: 0; background: #fff; }
+    .tb-logo img { width: 100%; height: 100%; object-fit: cover; }
+    .tb-title { font-size: 16px; font-weight: 800; color: #fff; flex: 1; }
+    .tb-title span { font-size: 11px; font-weight: 400; color: #bbdefb; display: block; }
+    .tb-user { font-size: 12px; color: #bbdefb; white-space: nowrap; }
+    .btn-logout {
+      background: rgba(255,255,255,.15); color: #fff;
+      border: 1px solid rgba(255,255,255,.3); border-radius: 6px;
+      padding: 6px 14px; font-size: 13px; font-weight: 600;
+      cursor: pointer; font-family: inherit; transition: background .2s;
+    }
+    .btn-logout:hover { background: rgba(255,255,255,.25); }
+    .tabs { background: #fff; padding: 0 20px; border-bottom: 2px solid #e8eaf6; display: flex; }
+    .tab-btn {
+      padding: 14px 22px; font-size: 14px; font-weight: 600; color: #888;
+      border: none; background: none; cursor: pointer;
+      border-bottom: 3px solid transparent; margin-bottom: -2px;
+      font-family: inherit; transition: color .2s, border-color .2s;
+    }
+    .tab-btn.active { color: #1a2d7d; border-bottom-color: #0d6eb8; }
+    .tab-btn:hover:not(.active) { color: #0d6eb8; }
+    .dash-content { padding: 24px 20px; max-width: 1280px; margin: 0 auto; }
+
+    /* Stats */
+    .stats-row { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 22px; }
+    .stat-card {
+      background: #fff; border-radius: 12px; padding: 20px 22px;
+      box-shadow: 0 2px 10px rgba(26,45,125,.07); border-left: 4px solid;
+    }
+    .stat-card:nth-child(1) { border-left-color: #1a2d7d; }
+    .stat-card:nth-child(2) { border-left-color: #0d6eb8; }
+    .stat-card:nth-child(3) { border-left-color: #f5a623; }
+    .stat-num { font-size: 38px; font-weight: 800; color: #1a2d7d; line-height: 1; }
+    .stat-label { font-size: 12px; color: #888; margin-top: 5px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .4px; }
+
+    /* Charts */
+    .charts-row { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; margin-bottom: 22px; }
+    .chart-card { background: #fff; border-radius: 12px; padding: 20px 22px;
+      box-shadow: 0 2px 10px rgba(26,45,125,.07); }
+    .chart-card h4 { font-size: 12px; font-weight: 700; color: #1a2d7d;
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
+
+    /* Actions */
+    .actions-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+    .search-box {
+      flex: 1; min-width: 200px; border: 1.5px solid #9fa8da; border-radius: 8px;
+      padding: 9px 14px; font-size: 14px; color: #1a237e; background: #fff;
+      outline: none; font-family: inherit; transition: border-color .2s;
+    }
+    .search-box:focus { border-color: #0d6eb8; }
+    .count-badge { font-size: 13px; color: #888; white-space: nowrap; }
+    .btn-act {
+      background: linear-gradient(135deg, #1a2d7d, #0d6eb8); color: #fff;
+      border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px;
+      font-weight: 700; cursor: pointer; font-family: inherit; white-space: nowrap;
+      transition: opacity .2s;
+    }
+    .btn-act:hover { opacity: .88; }
+    .btn-act.ghost { background: #fff; color: #1a2d7d; border: 1.5px solid #9fa8da; }
+    .btn-act.ghost:hover { background: #f5f6fc; opacity: 1; }
+
+    #loadingMsg { text-align: center; padding: 40px; color: #888; font-size: 15px; display: none; }
+
+    /* Table */
+    .table-card { background: #fff; border-radius: 12px; overflow: hidden;
+      box-shadow: 0 2px 10px rgba(26,45,125,.07); }
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 960px; }
+    .data-table th {
+      background: #1a2d7d; color: #fff; padding: 11px 14px; text-align: left;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+      white-space: nowrap; cursor: pointer; user-select: none;
+    }
+    .data-table th:hover { background: #0d3590; }
+    .data-table td { padding: 9px 14px; border-bottom: 1px solid #f0f2ff; vertical-align: middle; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: #f8f9ff; }
+    .link-btn {
+      display: inline-block; padding: 3px 10px; background: #e8eaf6;
+      color: #0d6eb8; border-radius: 4px; text-decoration: none;
+      font-size: 11px; font-weight: 700; transition: background .2s;
+    }
+    .link-btn:hover { background: #c5cae9; }
+    .btn-view {
+      background: #f5a623; color: #1a2d7d; border: none; border-radius: 5px;
+      padding: 4px 12px; font-size: 12px; font-weight: 700;
+      cursor: pointer; font-family: inherit; transition: opacity .2s;
+    }
+    .btn-view:hover { opacity: .85; }
+    .role-select {
+      border: 1.5px solid #e8eaf6; border-radius: 6px; padding: 4px 8px;
+      font-size: 12px; color: #1a237e; background: #f8f9ff;
+      cursor: pointer; font-family: inherit; transition: border-color .2s;
+    }
+    .role-select:focus { border-color: #0d6eb8; outline: none; }
+    .role-select.has-role { font-weight: 700; border-color: #9fa8da; }
+    .empty-state { text-align: center; padding: 50px 20px; color: #aaa; }
+    .empty-state p { font-size: 15px; margin-top: 12px; }
+
+    /* Modal */
+    #modalOverlay {
+      position: fixed; inset: 0; background: rgba(26,45,125,.55);
+      display: none; align-items: center; justify-content: center; z-index: 999; padding: 16px;
+    }
+    .modal-card {
+      background: #fff; border-radius: 14px;
+      box-shadow: 0 16px 64px rgba(26,45,125,.4);
+      width: 100%; max-width: 560px; max-height: 88vh; overflow-y: auto;
+    }
+    .modal-header {
+      background: linear-gradient(135deg, #1a2d7d, #0d6eb8);
+      padding: 18px 24px; display: flex; justify-content: space-between; align-items: center;
+      position: sticky; top: 0;
+    }
+    .modal-header h3 { color: #fff; font-size: 16px; }
+    .btn-close {
+      background: rgba(255,255,255,.2); border: none; color: #fff;
+      width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+      font-size: 16px; display: flex; align-items: center; justify-content: center;
+      transition: background .2s;
+    }
+    .btn-close:hover { background: rgba(255,255,255,.35); }
+    #modalBody { padding: 20px 24px; }
+    .mf { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid #f0f0f0; }
+    .mf:last-child { border-bottom: none; }
+    .mf-label { font-size: 11px; font-weight: 700; color: #1a2d7d;
+      text-transform: uppercase; letter-spacing: .4px; width: 145px; flex-shrink: 0; padding-top: 2px; }
+    .mf-value { font-size: 14px; color: #333; word-break: break-word; }
+    .modal-links { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .modal-link {
+      display: inline-block; padding: 9px 20px;
+      background: linear-gradient(135deg, #1a2d7d, #0d6eb8);
+      color: #fff; border-radius: 7px; text-decoration: none;
+      font-size: 13px; font-weight: 700; transition: opacity .2s;
+    }
+    .modal-link:hover { opacity: .88; }
+
+    /* Admins tab */
+    .admins-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+    .card { background: #fff; border-radius: 12px;
+      box-shadow: 0 2px 10px rgba(26,45,125,.07); padding: 24px; }
+    .card h3 { font-size: 13px; font-weight: 800; color: #1a2d7d;
+      text-transform: uppercase; letter-spacing: .5px;
+      margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #e8eaf6; }
+    .admin-item { display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; background: #f5f6fc; border-radius: 8px;
+      margin-bottom: 8px; font-size: 14px; font-weight: 600; color: #1a2d7d; }
+    .ff { margin-bottom: 14px; }
+    .ff label { display: block; font-size: 12px; font-weight: 700; color: #1a2d7d;
+      text-transform: uppercase; letter-spacing: .4px; margin-bottom: 5px; }
+    .ff input {
+      width: 100%; border: 1.5px solid #9fa8da; border-radius: 6px;
+      padding: 9px 12px; font-size: 14px; color: #1a237e;
+      background: #f5f6fc; outline: none; font-family: inherit; transition: border-color .2s;
+    }
+    .ff input:focus { border-color: #0d6eb8; box-shadow: 0 0 0 3px rgba(13,110,184,.12); background: #fff; }
+    .msg-err { color: #e53935; font-size: 13px; margin-top: 8px; }
+    .msg-ok  { color: #2e7d32; font-size: 13px; margin-top: 8px; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .stats-row   { grid-template-columns: 1fr; }
+      .charts-row  { grid-template-columns: 1fr; }
+      .admins-grid { grid-template-columns: 1fr; }
+      .tb-user     { display: none; }
+      .tb-title span { display: none; }
+    }
+    @media (max-width: 520px) {
+      .actions-row { flex-direction: column; align-items: stretch; }
+      .search-box  { min-width: 0; }
+      .dash-content { padding: 16px 12px; }
+      .mf-label { width: 110px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="loginPage">
+  <div class="login-card">
+    <div class="login-logo">
+      <img src="image.png" alt="IFL" onerror="this.style.display='none'" />
+    </div>
+    <h1>Espace Administration</h1>
+    <p class="login-sub">Ligue Internationale de l'Amitié – Bénin</p>
+    <div class="lf">
+      <label>Identifiant</label>
+      <input type="text" id="uIn" placeholder="Votre identifiant" autocomplete="username" />
+    </div>
+    <div class="lf">
+      <label>Mot de passe</label>
+      <input type="password" id="pIn" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+    <p id="loginError"></p>
+    <button class="btn-login" id="loginBtn" onclick="doLogin()">Se connecter</button>
+    <p class="login-badge">Accès réservé aux administrateurs</p>
+  </div>
+</div>
+
+<!-- ── DASHBOARD ── -->
+<div id="dashPage" style="display:none">
+
+  <div class="topbar">
+    <div class="tb-logo"><img src="image.png" alt="IFL" onerror="this.style.display='none'" /></div>
+    <div class="tb-title">
+      Administration IFL
+      <span>Ligue Internationale de l'Amitié – Bénin</span>
+    </div>
+    <div class="tb-user">Connecté : <strong id="adminName" style="color:#fff"></strong></div>
+    <button class="btn-logout" onclick="doLogout()">Déconnexion</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">Tableau de bord</button>
+    <button class="tab-btn" data-tab="admins" onclick="switchTab('admins')">Gestion des admins</button>
+  </div>
+
+  <!-- TAB : DASHBOARD -->
+  <div id="tab-dashboard" class="dash-content">
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-num" id="sTotal">–</div><div class="stat-label">Total des fiches</div></div>
+      <div class="stat-card"><div class="stat-num" id="sWeek">–</div><div class="stat-label">Cette semaine</div></div>
+      <div class="stat-card"><div class="stat-num" id="sMonth">–</div><div class="stat-label">Ce mois-ci</div></div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-card">
+        <h4>Fiches soumises par mois (6 derniers mois)</h4>
+        <canvas id="chartBar"></canvas>
+      </div>
+      <div class="chart-card">
+        <h4>Répartition par région</h4>
+        <canvas id="chartDonut"></canvas>
+      </div>
+    </div>
+
+    <div class="actions-row">
+      <input type="text" class="search-box" id="searchIn"
+             placeholder="Rechercher (nom, email, région, profession…)" oninput="filterTable()" />
+      <span class="count-badge" id="countBadge"></span>
+      <button class="btn-act ghost" onclick="loadData()">↻ Actualiser</button>
+      <button class="btn-act" onclick="downloadCSV()">⬇ Télécharger CSV</button>
+    </div>
+
+    <div id="loadingMsg">Chargement des fiches…</div>
+    <div class="table-card" id="tableWrap"></div>
+  </div>
+
+  <!-- TAB : ADMINS -->
+  <div id="tab-admins" class="dash-content" style="display:none">
+    <div class="admins-grid">
+      <div class="card">
+        <h3>Administrateurs actuels</h3>
+        <div id="adminsList"><p style="color:#aaa;font-size:13px">Chargement…</p></div>
+      </div>
+      <div class="card">
+        <h3>Ajouter un administrateur</h3>
+        <div class="ff">
+          <label>Identifiant <span style="color:#e53935">*</span></label>
+          <input type="text" id="nuIn" placeholder="Nom d'utilisateur" autocomplete="off" />
+        </div>
+        <div class="ff">
+          <label>Mot de passe <span style="color:#e53935">*</span></label>
+          <input type="password" id="npIn" placeholder="Minimum 8 caractères" autocomplete="new-password" />
+        </div>
+        <button class="btn-act" id="addAdminBtn" onclick="addAdmin()" style="width:100%">
+          Ajouter l'administrateur
+        </button>
+        <p id="addMsg"></p>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /dashPage -->
+
+<!-- ── MODAL DÉTAILS ── -->
+<div id="modalOverlay" onclick="closeModalOut(event)">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>Détails de la fiche</h3>
+      <button class="btn-close" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+  var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbznkkoociS8S4oYbnfbziqwbyX4vNIyGn_xFgoYtDuQwhe7Rw6-B31Mz78wJxc3j54YKQ/exec';
+
+  var C = {
+    date:0, nom:1, email:2, adresse:3, tel1:4, tel2:5,
+    secteur:6, poste:7, niveau:8, structure:9, region:10,
+    district:11, observation:12, cv:13, prenoms:14, photo:15, profession:17
+  };
+
+  var ROLES = ['', 'Membre', 'Responsable', 'Coordinateur', 'Superviseur'];
+
+  var _user = '', _pass = '', _allData = [], _curData = [];
+  var _sortCol = -1, _sortAsc = true;
+  var _chartBar = null, _chartDonut = null;
+
+  /* ── Boot ──────────────────────────────────────────────────────────────── */
+  function init() {
+    var s = sessionStorage.getItem('ifl_admin');
+    if (s) {
+      try {
+        var d = JSON.parse(s);
+        _user = d.u; _pass = d.p;
+        showDash(); loadData();
+      } catch(e) { sessionStorage.removeItem('ifl_admin'); }
+    }
+    document.getElementById('uIn').addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') document.getElementById('pIn').focus();
+    });
+    document.getElementById('pIn').addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') doLogin();
+    });
+    document.getElementById('npIn').addEventListener('keydown', function(ev) {
+      if (ev.key === 'Enter') addAdmin();
+    });
+  }
+
+  /* ── Auth ───────────────────────────────────────────────────────────────── */
+  async function doLogin() {
+    var u = document.getElementById('uIn').value.trim();
+    var p = document.getElementById('pIn').value;
+    var errEl = document.getElementById('loginError');
+    errEl.style.display = 'none';
+    if (!u || !p) { showErr('Veuillez remplir tous les champs.'); return; }
+    var btn = document.getElementById('loginBtn');
+    btn.textContent = 'Connexion…'; btn.disabled = true;
+    try {
+      var res  = await fetch(SCRIPT_URL + '?action=adminlogin&user=' + enc(u) + '&pass=' + enc(p));
+      var data = await res.json();
+      if (data.status === 'ok') {
+        _user = u; _pass = p;
+        sessionStorage.setItem('ifl_admin', JSON.stringify({ u: u, p: p }));
+        showDash(); loadData();
+      } else {
+        showErr(data.message || 'Identifiants incorrects.');
+      }
+    } catch(e) { showErr('Erreur de connexion. Vérifiez votre accès internet.'); }
+    btn.textContent = 'Se connecter'; btn.disabled = false;
+  }
+
+  function doLogout() {
+    sessionStorage.removeItem('ifl_admin');
+    _user = ''; _pass = ''; _allData = []; _curData = [];
+    document.getElementById('loginPage').style.display = 'flex';
+    document.getElementById('dashPage').style.display  = 'none';
+    document.getElementById('uIn').value = '';
+    document.getElementById('pIn').value = '';
+    document.getElementById('loginError').style.display = 'none';
+  }
+
+  function showDash() {
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('dashPage').style.display  = 'block';
+    document.getElementById('adminName').textContent = _user;
+    switchTab('dashboard');
+  }
+
+  function showErr(msg) {
+    var e = document.getElementById('loginError');
+    e.textContent = msg; e.style.display = 'block';
+  }
+
+  /* ── Data ───────────────────────────────────────────────────────────────── */
+  async function loadData() {
+    document.getElementById('loadingMsg').style.display = 'block';
+    document.getElementById('tableWrap').innerHTML = '';
+    try {
+      var res  = await fetch(SCRIPT_URL + '?action=getdata&user=' + enc(_user) + '&pass=' + enc(_pass));
+      var resp = await res.json();
+      if (resp.status === 'ok') {
+        _allData = resp.data.length > 1 ? resp.data.slice(1) : [];
+        _curData = _allData.slice();
+        renderStats(_allData);
+        renderCharts(_allData);
+        renderTable(_curData);
+        updateCount();
+      } else if (resp.status === 'unauthorized') {
+        doLogout();
+      } else {
+        document.getElementById('tableWrap').innerHTML = errBox('Erreur lors du chargement des données.');
+      }
+    } catch(e) {
+      document.getElementById('tableWrap').innerHTML = errBox('Erreur de connexion au serveur.');
+    }
+    document.getElementById('loadingMsg').style.display = 'none';
+  }
+
+  /* ── Stats ──────────────────────────────────────────────────────────────── */
+  function renderStats(data) {
+    var now = new Date(), week = new Date(now - 7 * 864e5),
+        month = new Date(now.getFullYear(), now.getMonth(), 1);
+    var w = 0, m = 0;
+    data.forEach(function(r) {
+      var d = new Date(r[C.date]);
+      if (!isNaN(d)) { if (d >= week) w++; if (d >= month) m++; }
+    });
+    document.getElementById('sTotal').textContent = data.length;
+    document.getElementById('sWeek').textContent  = w;
+    document.getElementById('sMonth').textContent = m;
+  }
+
+  /* ── Charts ─────────────────────────────────────────────────────────────── */
+  function renderCharts(data) {
+    var now = new Date();
+    var labels = [], counts = [];
+    for (var i = 5; i >= 0; i--) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      labels.push(d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }));
+      counts.push(data.filter(function(r) {
+        var rd = new Date(r[C.date]);
+        return !isNaN(rd) && rd.getMonth() === d.getMonth() && rd.getFullYear() === d.getFullYear();
+      }).length);
+    }
+    if (_chartBar) _chartBar.destroy();
+    _chartBar = new Chart(document.getElementById('chartBar'), {
+      type: 'bar',
+      data: { labels: labels, datasets: [{ label: 'Fiches', data: counts,
+        backgroundColor: '#0d6eb8', borderRadius: 6 }] },
+      options: { responsive: true, plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } } }
+    });
+
+    var rMap = {};
+    data.forEach(function(r) {
+      var k = ((r[C.region] || '').toString().trim()) || 'Non précisé';
+      rMap[k] = (rMap[k] || 0) + 1;
+    });
+    var rKeys = Object.keys(rMap).sort(function(a, b) { return rMap[b] - rMap[a]; });
+    var palette = ['#1a2d7d','#0d6eb8','#1565c0','#42a5f5','#f5a623','#78909c','#26a69a','#ab47bc'];
+    if (_chartDonut) _chartDonut.destroy();
+    _chartDonut = new Chart(document.getElementById('chartDonut'), {
+      type: 'doughnut',
+      data: { labels: rKeys, datasets: [{ data: rKeys.map(function(k) { return rMap[k]; }),
+        backgroundColor: palette.slice(0, rKeys.length), borderWidth: 2, borderColor: '#fff' }] },
+      options: { responsive: true, cutout: '62%',
+        plugins: { legend: { position: 'bottom',
+          labels: { font: { size: 11 }, padding: 8, boxWidth: 12 } } } }
+    });
+  }
+
+  /* ── Table ──────────────────────────────────────────────────────────────── */
+  function renderTable(data) {
+    var wrap = document.getElementById('tableWrap');
+    if (!data.length) {
+      wrap.innerHTML = '<div class="empty-state">'
+        + '<svg width="52" height="52" fill="none" viewBox="0 0 24 24" stroke="#ccc" stroke-width="1.5">'
+        + '<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"/>'
+        + '</svg><p>Aucune fiche à afficher.</p></div>';
+      return;
+    }
+    var h = '<div class="table-wrap"><table class="data-table"><thead><tr>'
+      + mkTh('Date', C.date) + mkTh('Nom & Prénoms', C.nom) + mkTh('Email', C.email)
+      + mkTh('Téléphone', C.tel1) + mkTh('Profession', C.profession) + mkTh('Région', C.region)
+      + '<th>Rôle</th><th>CV</th><th>Photo</th><th></th>'
+      + '</tr></thead><tbody>';
+
+    data.forEach(function(r, idx) {
+      var nom  = [(r[C.prenoms] || ''), (r[C.nom] || '')].join(' ').trim();
+      var em   = (r[C.email] || '').toString();
+      var role = getRole(em);
+      var cv   = r[C.cv]    ? '<a href="' + escA(r[C.cv])    + '" target="_blank" class="link-btn">CV</a>'    : '–';
+      var ph   = r[C.photo] ? '<a href="' + escA(r[C.photo]) + '" target="_blank" class="link-btn">Photo</a>' : '–';
+      var opts = ROLES.map(function(rv) {
+        return '<option value="' + escH(rv) + '"' + (rv === role ? ' selected' : '') + '>'
+          + escH(rv || '— Rôle —') + '</option>';
+      }).join('');
+      var selCls = 'role-select' + (role ? ' has-role' : '');
+
+      h += '<tr>'
+        + '<td style="white-space:nowrap;color:#888;font-size:12px">' + escH(fmtD(r[C.date])) + '</td>'
+        + '<td style="font-weight:600">' + escH(nom || '–') + '</td>'
+        + '<td style="color:#0d6eb8;font-size:12px">' + escH(em || '–') + '</td>'
+        + '<td style="white-space:nowrap">' + escH((r[C.tel1] || '–').toString()) + '</td>'
+        + '<td>' + escH((r[C.profession] || '–').toString()) + '</td>'
+        + '<td>' + escH((r[C.region] || '–').toString()) + '</td>'
+        + '<td><select class="' + selCls + '" data-email="' + escH(em) + '" onchange="setRole(this)">' + opts + '</select></td>'
+        + '<td>' + cv + '</td>'
+        + '<td>' + ph + '</td>'
+        + '<td><button class="btn-view" onclick="openModal(' + idx + ')">Voir</button></td>'
+        + '</tr>';
+    });
+    h += '</tbody></table></div>';
+    wrap.innerHTML = h;
+  }
+
+  function mkTh(label, col) {
+    var arr = _sortCol === col ? (_sortAsc ? ' ↑' : ' ↓') : '';
+    return '<th onclick="sortBy(' + col + ')">' + label + arr + '</th>';
+  }
+
+  function sortBy(col) {
+    _sortCol === col ? (_sortAsc = !_sortAsc) : (_sortCol = col, _sortAsc = true);
+    _curData.sort(function(a, b) {
+      var av = col === C.date ? new Date(a[col]) : (a[col] || '').toString().toLowerCase();
+      var bv = col === C.date ? new Date(b[col]) : (b[col] || '').toString().toLowerCase();
+      return (av < bv ? -1 : av > bv ? 1 : 0) * (_sortAsc ? 1 : -1);
+    });
+    renderTable(_curData); updateCount();
+  }
+
+  function filterTable() {
+    var q = document.getElementById('searchIn').value.toLowerCase().trim();
+    _sortCol = -1; _sortAsc = true;
+    _curData = q
+      ? _allData.filter(function(r) {
+          return r.some(function(c) { return (c || '').toString().toLowerCase().includes(q); });
+        })
+      : _allData.slice();
+    renderTable(_curData); updateCount();
+  }
+
+  function updateCount() {
+    document.getElementById('countBadge').textContent = _curData.length + ' fiche(s)';
+  }
+
+  /* ── Rôles ──────────────────────────────────────────────────────────────── */
+  function getRole(email) {
+    if (!email) return '';
+    return (JSON.parse(localStorage.getItem('ifl_roles') || '{}'))[email] || '';
+  }
+
+  function setRole(select) {
+    var email = select.dataset.email;
+    if (!email) return;
+    var store = JSON.parse(localStorage.getItem('ifl_roles') || '{}');
+    store[email] = select.value;
+    localStorage.setItem('ifl_roles', JSON.stringify(store));
+    select.className = 'role-select' + (select.value ? ' has-role' : '');
+  }
+
+  /* ── CSV Export ─────────────────────────────────────────────────────────── */
+  function downloadCSV() {
+    if (!_curData.length) { alert('Aucune donnée à exporter.'); return; }
+    var hdrs = ['Date','Nom','Email','Adresse','Tél 1','Tél 2','Secteur','Poste',
+                'Niveau','Structure','Région','District','Observation','CV',
+                'Prénoms','Photo','Email 2','Profession','Rôle'];
+    var rows = [hdrs].concat(_curData.map(function(r) {
+      return r.concat([getRole((r[C.email] || '').toString())]).map(function(c) {
+        return '"' + (c || '').toString().replace(/"/g, '""') + '"';
+      });
+    }));
+    var csv  = '﻿' + rows.map(function(r) { return r.join(';'); }).join('\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href = url; a.download = 'fiches_IFL_' + new Date().toISOString().slice(0, 10) + '.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  /* ── Modal ──────────────────────────────────────────────────────────────── */
+  function openModal(idx) {
+    var r = _curData[idx]; if (!r) return;
+    var nom  = [(r[C.prenoms] || ''), (r[C.nom] || '')].join(' ').trim();
+    var em   = (r[C.email] || '').toString();
+    var role = getRole(em);
+    var fields = [
+      ['Nom complet',         nom || '–'],
+      ['Email',               em  || '–'],
+      ['Adresse',             (r[C.adresse]    || '–').toString()],
+      ['Téléphone 1',         (r[C.tel1]       || '–').toString()],
+      ['Téléphone 2',         (r[C.tel2]       || '–').toString()],
+      ['Profession',          (r[C.profession] || '–').toString()],
+      ["Secteur d'activité",  (r[C.secteur]    || '–').toString()],
+      ['Poste actuel',        (r[C.poste]      || '–').toString()],
+      ["Niveau d'étude",      (r[C.niveau]     || '–').toString()],
+      ['Structure / Service', (r[C.structure]  || '–').toString()],
+      ['Région',              (r[C.region]     || '–').toString()],
+      ['District',            (r[C.district]   || '–').toString()],
+      ['Observation',         (r[C.observation]|| '–').toString()],
+      ['Rôle assigné',        role || 'Aucun'],
+      ['Date soumission',     fmtD(r[C.date])]
+    ];
+    var body = fields.map(function(f) {
+      return '<div class="mf"><span class="mf-label">' + escH(f[0]) + '</span>'
+           + '<span class="mf-value">' + escH(f[1]) + '</span></div>';
+    }).join('');
+    var links = [];
+    if (r[C.cv])    links.push('<a href="' + escA(r[C.cv])    + '" target="_blank" class="modal-link">Télécharger le CV</a>');
+    if (r[C.photo]) links.push('<a href="' + escA(r[C.photo]) + '" target="_blank" class="modal-link">Voir la photo</a>');
+    if (links.length) body += '<div class="modal-links">' + links.join('') + '</div>';
+    document.getElementById('modalBody').innerHTML = body;
+    document.getElementById('modalOverlay').style.display = 'flex';
+  }
+
+  function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; }
+  function closeModalOut(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+
+  /* ── Gestion admins ─────────────────────────────────────────────────────── */
+  async function loadAdmins() {
+    var el = document.getElementById('adminsList');
+    el.innerHTML = '<p style="color:#aaa;font-size:13px">Chargement…</p>';
+    try {
+      var res  = await fetch(SCRIPT_URL + '?action=listadmins&user=' + enc(_user) + '&pass=' + enc(_pass));
+      var data = await res.json();
+      if (data.status === 'ok' && data.admins && data.admins.length) {
+        el.innerHTML = data.admins.map(function(u) {
+          return '<div class="admin-item">'
+            + '<svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">'
+            + '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0z"/>'
+            + '<path stroke-linecap="round" stroke-linejoin="round" d="M4.5 20.118a7.5 7.5 0 0 1 15 0"/>'
+            + '</svg>' + escH(u) + '</div>';
+        }).join('');
+      } else {
+        el.innerHTML = '<p style="color:#aaa;font-size:13px">Aucun admin trouvé.</p>';
+      }
+    } catch(e) {
+      el.innerHTML = '<p style="color:#e53935;font-size:13px">Erreur de chargement.</p>';
+    }
+  }
+
+  async function addAdmin() {
+    var nu = document.getElementById('nuIn').value.trim();
+    var np = document.getElementById('npIn').value;
+    var msg = document.getElementById('addMsg');
+    msg.textContent = ''; msg.className = '';
+    if (!nu || !np)    { msg.textContent = 'Veuillez remplir les deux champs.'; msg.className = 'msg-err'; return; }
+    if (np.length < 8) { msg.textContent = 'Mot de passe : 8 caractères minimum.'; msg.className = 'msg-err'; return; }
+    var btn = document.getElementById('addAdminBtn');
+    btn.textContent = 'Ajout…'; btn.disabled = true;
+    try {
+      var url = SCRIPT_URL + '?action=addadmin&user=' + enc(_user) + '&pass=' + enc(_pass)
+              + '&newuser=' + enc(nu) + '&newpass=' + enc(np);
+      var res  = await fetch(url);
+      var data = await res.json();
+      if (data.status === 'ok') {
+        msg.textContent = '✓ Administrateur ajouté.'; msg.className = 'msg-ok';
+        document.getElementById('nuIn').value = '';
+        document.getElementById('npIn').value = '';
+        loadAdmins();
+      } else {
+        msg.textContent = data.message || "Erreur lors de l'ajout."; msg.className = 'msg-err';
+      }
+    } catch(e) { msg.textContent = 'Erreur de connexion.'; msg.className = 'msg-err'; }
+    btn.textContent = "Ajouter l'administrateur"; btn.disabled = false;
+  }
+
+  /* ── Navigation ─────────────────────────────────────────────────────────── */
+  function switchTab(t) {
+    ['dashboard', 'admins'].forEach(function(x) {
+      document.getElementById('tab-' + x).style.display = (x === t) ? 'block' : 'none';
+      var b = document.querySelector('.tab-btn[data-tab="' + x + '"]');
+      if (b) b.classList.toggle('active', x === t);
+    });
+    if (t === 'admins') loadAdmins();
+  }
+
+  /* ── Utils ──────────────────────────────────────────────────────────────── */
+  function fmtD(v) {
+    if (!v) return '–';
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? (v || '').toString().slice(0, 10)
+      : d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  function escH(s) {
+    return (s || '').toString()
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function escA(s) { return (s || '').toString().replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+  function enc(s)  { return encodeURIComponent(s || ''); }
+  function errBox(t) { return '<p style="text-align:center;color:#e53935;padding:36px;font-size:14px">' + escH(t) + '</p>'; }
+
+  init();
+</script>
+</body>
+</html>

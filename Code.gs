@@ -41,12 +41,29 @@ function saveFileToDrive(base64, mimeType, filename) {
   return file.getUrl();
 }
 
-// ── GET : recherche d'une fiche par email ──────────────────────────────────
+// ── GET : recherche d'une fiche par email + actions admin ─────────────────
 function doGet(e) {
   var action = (e.parameter.action || '').toLowerCase();
   if (action === 'lookup') {
     var email = (e.parameter.email || '').toLowerCase().trim();
     return lookupRecord(email);
+  }
+  if (action === 'adminlogin') {
+    return adminLogin(e.parameter.user || '', e.parameter.pass || '');
+  }
+  if (action === 'getdata') {
+    return getAdminData(e.parameter.user || '', e.parameter.pass || '');
+  }
+  if (action === 'listadmins') {
+    return listAdminUsers(e.parameter.user || '', e.parameter.pass || '');
+  }
+  if (action === 'addadmin') {
+    return addAdminUser(
+      e.parameter.user    || '',
+      e.parameter.pass    || '',
+      e.parameter.newuser || '',
+      e.parameter.newpass || ''
+    );
   }
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'ok' }))
@@ -268,4 +285,187 @@ function buildConfirmEmail(p, fullName) {
     +   '<p style="color:#bbdefb;font-size:12px;margin:0">IFL… Influencing lives for Christ</p>'
     + '</div>'
     + '</div></body></html>';
+}
+
+// ── Admin : gestion des accès ─────────────────────────────────────────────
+
+var ADMIN_KEY    = 'IFL_ADMINS';
+var DEFAULT_USER = 'admin';
+var DEFAULT_PASS = 'IFL@Benin2024!';
+
+function hashPass(pass) {
+  var bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256, pass, Utilities.Charset.UTF_8);
+  return bytes.map(function(b) {
+    return ('0' + (b & 0xFF).toString(16)).slice(-2);
+  }).join('');
+}
+
+function getAdmins() {
+  var props = PropertiesService.getScriptProperties();
+  var json  = props.getProperty(ADMIN_KEY);
+  if (!json) {
+    var init = [{ user: DEFAULT_USER, passHash: hashPass(DEFAULT_PASS) }];
+    props.setProperty(ADMIN_KEY, JSON.stringify(init));
+    return init;
+  }
+  return JSON.parse(json);
+}
+
+function verifyAdmin(u, p) {
+  var h = hashPass(p);
+  return getAdmins().some(function(a) { return a.user === u && a.passHash === h; });
+}
+
+function adminLogin(u, p) {
+  var ok = !!(u && p && verifyAdmin(u, p));
+  return ContentService
+    .createTextOutput(JSON.stringify(ok
+      ? { status: 'ok' }
+      : { status: 'error', message: 'Identifiants incorrects' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getAdminData(u, p) {
+  if (!verifyAdmin(u, p)) return ContentService
+    .createTextOutput(JSON.stringify({ status: 'unauthorized' }))
+    .setMimeType(ContentService.MimeType.JSON);
+  var vals = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getDataRange().getValues();
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: 'ok', data: vals }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function listAdminUsers(u, p) {
+  if (!verifyAdmin(u, p)) return ContentService
+    .createTextOutput(JSON.stringify({ status: 'unauthorized' }))
+    .setMimeType(ContentService.MimeType.JSON);
+  var names = getAdmins().map(function(a) { return a.user; });
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: 'ok', admins: names }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function addAdminUser(u, p, nu, np) {
+  if (!verifyAdmin(u, p)) return ContentService
+    .createTextOutput(JSON.stringify({ status: 'unauthorized' }))
+    .setMimeType(ContentService.MimeType.JSON);
+  if (!nu || !np) return ContentService
+    .createTextOutput(JSON.stringify({ status: 'error', message: 'Champs manquants' }))
+    .setMimeType(ContentService.MimeType.JSON);
+  var admins = getAdmins();
+  if (admins.some(function(a) { return a.user === nu; })) return ContentService
+    .createTextOutput(JSON.stringify({ status: 'error', message: 'Identifiant déjà existant' }))
+    .setMimeType(ContentService.MimeType.JSON);
+  admins.push({ user: nu, passHash: hashPass(np) });
+  PropertiesService.getScriptProperties().setProperty(ADMIN_KEY, JSON.stringify(admins));
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: 'ok' }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// ── Menu Google Sheets ────────────────────────────────────────────────────
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Administration IFL')
+    .addItem('Créer un administrateur', 'showCreateAdminDialog')
+    .addSeparator()
+    .addItem('Liste des administrateurs', 'showAdminsList')
+    .addToUi();
+}
+
+function showAdminsList() {
+  var admins = getAdmins();
+  var lines  = admins.map(function(a, i) { return (i + 1) + '.  ' + a.user; }).join('\n');
+  SpreadsheetApp.getUi().alert(
+    'Administrateurs IFL (' + admins.length + ')',
+    lines || 'Aucun administrateur trouvé.',
+    SpreadsheetApp.getUi().ButtonSet.OK
+  );
+}
+
+function showCreateAdminDialog() {
+  var html = HtmlService.createHtmlOutput(
+    '<!DOCTYPE html><html><head><meta charset="UTF-8"/>'
+    + '<style>'
+    + '*{box-sizing:border-box;margin:0;padding:0}'
+    + 'body{font-family:Segoe UI,Arial,sans-serif;background:#f0f2ff;padding:16px}'
+    + '.card{background:#fff;padding:24px;border-radius:12px;'
+    +   'box-shadow:0 4px 20px rgba(26,45,125,.12)}'
+    + 'h2{font-size:15px;font-weight:800;color:#1a2d7d;margin-bottom:18px;'
+    +   'padding-bottom:10px;border-bottom:2px solid #e8eaf6}'
+    + 'label{display:block;font-size:11px;font-weight:700;color:#1a2d7d;'
+    +   'text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}'
+    + '.fg{margin-bottom:12px}'
+    + 'input{width:100%;border:1.5px solid #9fa8da;border-radius:6px;'
+    +   'padding:8px 11px;font-size:14px;color:#1a237e;background:#f5f6fc;'
+    +   'outline:none;font-family:inherit}'
+    + 'input:focus{border-color:#0d6eb8;box-shadow:0 0 0 3px rgba(13,110,184,.12);background:#fff}'
+    + '.btn{width:100%;background:linear-gradient(135deg,#1a2d7d,#0d6eb8);'
+    +   'color:#fff;border:none;border-radius:20px;padding:11px;font-size:14px;'
+    +   'font-weight:700;cursor:pointer;font-family:inherit;margin-top:6px}'
+    + '.btn:hover{opacity:.9}.btn:disabled{opacity:.55;cursor:default}'
+    + '.msg{margin-top:10px;font-size:13px;text-align:center;min-height:18px}'
+    + '.ok{color:#2e7d32}.er{color:#e53935}'
+    + '</style></head><body>'
+    + '<div class="card">'
+    + '<h2>Nouvel administrateur</h2>'
+    + '<div class="fg"><label>Identifiant <span style="color:#e53935">*</span></label>'
+    + '<input type="text" id="u" placeholder="Nom d\'utilisateur" autocomplete="off"/></div>'
+    + '<div class="fg"><label>Mot de passe <span style="color:#e53935">*</span></label>'
+    + '<input type="password" id="p" placeholder="Minimum 8 caractères"/></div>'
+    + '<div class="fg"><label>Confirmer <span style="color:#e53935">*</span></label>'
+    + '<input type="password" id="p2" placeholder="Répéter le mot de passe"/></div>'
+    + '<button class="btn" id="btn" onclick="save()">Créer l\'administrateur</button>'
+    + '<p class="msg" id="msg"></p>'
+    + '</div>'
+    + '<script>'
+    + 'function save(){'
+    + 'var u=document.getElementById("u").value.trim();'
+    + 'var p=document.getElementById("p").value;'
+    + 'var p2=document.getElementById("p2").value;'
+    + 'var msg=document.getElementById("msg");'
+    + 'msg.textContent="";msg.className="msg";'
+    + 'if(!u||!p||!p2){msg.textContent="Veuillez remplir tous les champs.";msg.className="msg er";return;}'
+    + 'if(p.length<8){msg.textContent="Mot de passe : 8 caractères minimum.";msg.className="msg er";return;}'
+    + 'if(p!==p2){msg.textContent="Les mots de passe ne correspondent pas.";msg.className="msg er";return;}'
+    + 'document.getElementById("btn").disabled=true;'
+    + 'msg.textContent="Création en cours…";'
+    + 'google.script.run'
+    + '.withSuccessHandler(function(r){'
+    + 'document.getElementById("btn").disabled=false;'
+    + 'if(r.ok){'
+    +   'msg.textContent="✓ "+r.message;msg.className="msg ok";'
+    +   'document.getElementById("u").value="";'
+    +   'document.getElementById("p").value="";'
+    +   'document.getElementById("p2").value="";'
+    + '}else{msg.textContent=r.message;msg.className="msg er";}'
+    + '})'
+    + '.withFailureHandler(function(e){'
+    + 'document.getElementById("btn").disabled=false;'
+    + 'document.getElementById("msg").textContent="Erreur : "+e.message;'
+    + 'document.getElementById("msg").className="msg er";'
+    + '})'
+    + '.createAdminFromSheet(u,p);'
+    + '}'
+    + 'document.getElementById("p2").addEventListener("keydown",function(e){if(e.key==="Enter")save();});'
+    + '<\/script></body></html>'
+  ).setWidth(360).setHeight(370);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Nouvel administrateur – IFL');
+}
+
+function createAdminFromSheet(user, pass) {
+  try {
+    if (!user || !pass) return { ok: false, message: 'Identifiants manquants.' };
+    var admins = getAdmins();
+    if (admins.some(function(a) { return a.user === user; })) {
+      return { ok: false, message: 'L\'identifiant « ' + user + ' » existe déjà.' };
+    }
+    admins.push({ user: user, passHash: hashPass(pass) });
+    PropertiesService.getScriptProperties().setProperty(ADMIN_KEY, JSON.stringify(admins));
+    return { ok: true, message: 'Administrateur « ' + user + ' » créé avec succès !' };
+  } catch(err) {
+    return { ok: false, message: 'Erreur : ' + err.toString() };
+  }
 }
