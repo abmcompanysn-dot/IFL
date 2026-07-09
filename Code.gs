@@ -317,7 +317,13 @@ function buildMatchPrompt(criteria, candidates) {
     + 'proches ou connexes du domaine demandé (pas seulement une correspondance exacte de mot). '
     + 'Pour chaque profil retenu, indiquez : nom complet, e-mail, et une courte justification '
     + '(diplôme/domaine, années d\'expérience, éléments pertinents du CV). '
-    + 'Si aucun profil ne correspond, dites-le clairement plutôt que d\'inventer une réponse.';
+    + 'Si aucun profil ne correspond parfaitement, ne spéculez JAMAIS sur des domaines ou profils '
+    + 'hypothétiques qui ne sont pas dans la liste ci-dessous. À la place, listez concrètement, '
+    + 'nom par nom, les profils réellement présents dans la base dont le domaine d\'étude ou '
+    + 'l\'expérience se rapprochent le plus (même partiellement) du besoin décrit, en citant leur '
+    + 'domaine d\'étude et années d\'expérience réels tels qu\'indiqués ci-dessous. '
+    + 'Toute affirmation doit être basée uniquement sur les données fournies, jamais sur des '
+    + 'suppositions générales de domaines qui pourraient exister.';
 
   prompt += '\n\nBesoin de recrutement :\n' + criteria;
 
