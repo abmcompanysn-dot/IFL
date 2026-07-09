@@ -305,7 +305,8 @@
       <button class="btn-act" onclick="downloadCSV()">⬇ Télécharger CSV</button>
       <button class="btn-act" id="syncCvBtn" onclick="syncMissingCvs()">🤖 Synchroniser les CV manquants</button>
     </div>
-    <div id="syncCvStatus" style="font-size:12px;color:#888;margin:-6px 0 14px"></div>
+    <div id="syncCvStatus" style="font-size:12px;color:#888;margin:-6px 0 4px"></div>
+    <ul id="syncCvErrors" style="font-size:12px;color:#e53935;margin:0 0 14px 18px;display:none"></ul>
 
     <div id="loadingMsg">Chargement des fiches…</div>
     <div class="table-card" id="tableWrap"></div>
@@ -370,7 +371,7 @@
 </div>
 
 <script>
-  var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbznkkoociS8S4oYbnfbziqwbyX4vNIyGn_xFgoYtDuQwhe7Rw6-B31Mz78wJxc3j54YKQ/exec';
+  var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxCUORqs56-y0Llc4Ubw8O6P24qySgjnMrnV9wEBD2Mx_joJLnMT1eKynuPpOyYU-zgdQ/exec';
 
   var C = {
     date:0, nom:1, email:2, adresse:3, tel1:4, tel2:5,
@@ -760,8 +761,11 @@
   async function syncMissingCvs() {
     var btn = document.getElementById('syncCvBtn');
     var statusEl = document.getElementById('syncCvStatus');
+    var errorsEl = document.getElementById('syncCvErrors');
     btn.disabled = true;
-    var totalProcessed = 0, totalSkipped = 0, totalErrors = 0;
+    errorsEl.style.display = 'none';
+    errorsEl.innerHTML = '';
+    var totalProcessed = 0, totalSkipped = 0, totalErrors = 0, allFailedRows = [];
 
     async function runBatch() {
       statusEl.textContent = totalProcessed + ' fiche(s) synchronisée(s) jusqu\'ici… (en cours)';
@@ -787,12 +791,21 @@
         totalProcessed += data.processed;
         totalSkipped   += data.skippedNoCv;
         totalErrors    += data.errors;
+        if (data.failedRows && data.failedRows.length) {
+          allFailedRows = allFailedRows.concat(data.failedRows);
+        }
 
         if (data.stoppedEarly && data.remaining > 0) {
           runBatch();
         } else {
           statusEl.textContent = '✓ Terminé : ' + totalProcessed + ' synchronisée(s), '
             + totalSkipped + ' sans CV, ' + totalErrors + ' erreur(s).';
+          if (allFailedRows.length) {
+            errorsEl.innerHTML = allFailedRows.map(function(f) {
+              return '<li>' + escH(f.nom) + ' (ligne ' + f.row + ') : ' + escH(f.message) + '</li>';
+            }).join('');
+            errorsEl.style.display = 'block';
+          }
           btn.disabled = false;
           loadData();
         }

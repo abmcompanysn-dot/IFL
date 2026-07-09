@@ -151,19 +151,13 @@ function lookupRecord(email) {
 function createJsonResponse(payload) {
   return ContentService
     .createTextOutput(JSON.stringify(payload))
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doOptions(e) {
   return ContentService
     .createTextOutput('')
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeader('Access-Control-Allow-Origin', '*')
-    .setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 var AI_GROQ_KEY    = 'GROQ_API_KEY';
@@ -440,6 +434,7 @@ function runBatchCvSync() {
   var start   = new Date().getTime();
 
   var processed = 0, skippedNoCv = 0, errors = 0, stoppedEarly = false, row;
+  var failedRows = [];
 
   for (row = 2; row <= lastRow; row++) {
     if (new Date().getTime() - start > CV_SYNC_TIME_BUDGET_MS) {
@@ -454,7 +449,16 @@ function runBatchCvSync() {
     if (!cvUrl || !cvUrl.toString().trim()) { skippedNoCv++; continue; }
 
     var result = resyncCvSummary(row);
-    if (result.status === 'ok') processed++; else errors++;
+    if (result.status === 'ok') {
+      processed++;
+    } else {
+      errors++;
+      failedRows.push({
+        row: row,
+        nom: (sheet.getRange(row, 2).getValue() || '').toString().trim() || 'sans nom',
+        message: result.message || 'Erreur inconnue.'
+      });
+    }
   }
 
   var remaining = 0;
@@ -470,7 +474,8 @@ function runBatchCvSync() {
     skippedNoCv: skippedNoCv,
     errors: errors,
     remaining: remaining,
-    stoppedEarly: stoppedEarly
+    stoppedEarly: stoppedEarly,
+    failedRows: failedRows
   };
 }
 
@@ -480,6 +485,13 @@ function syncAllCvSummaries() {
   var msg = r.processed + ' fiche(s) synchronisée(s).\n'
     + r.skippedNoCv + ' fiche(s) sans CV ignorée(s).\n'
     + r.errors + ' erreur(s) d\'extraction/analyse.';
+
+  if (r.failedRows.length) {
+    msg += '\n\nDétail des erreurs :\n' + r.failedRows.map(function(f) {
+      return '- Ligne ' + f.row + ' (' + f.nom + ') : ' + f.message;
+    }).join('\n');
+  }
+
   msg += r.stoppedEarly
     ? '\n\n⏱ Limite de temps atteinte. Il reste au moins ' + r.remaining + ' fiche(s) à traiter.'
       + '\nRelancez « Synchroniser tous les résumés IA » pour continuer.'
@@ -542,7 +554,8 @@ function doPost(e) {
         skippedNoCv: batchResult.skippedNoCv,
         errors: batchResult.errors,
         remaining: batchResult.remaining,
-        stoppedEarly: batchResult.stoppedEarly
+        stoppedEarly: batchResult.stoppedEarly,
+        failedRows: batchResult.failedRows
       });
     }
 
