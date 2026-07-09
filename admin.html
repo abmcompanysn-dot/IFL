@@ -274,6 +274,7 @@
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">Tableau de bord</button>
+    <button class="tab-btn" data-tab="match" onclick="switchTab('match')">Recherche IA de profils</button>
     <button class="tab-btn" data-tab="admins" onclick="switchTab('admins')">Gestion des admins</button>
   </div>
 
@@ -298,14 +299,36 @@
 
     <div class="actions-row">
       <input type="text" class="search-box" id="searchIn"
-             placeholder="Rechercher (nom, email, région, profession…)" oninput="filterTable()" />
+             placeholder="Rechercher (nom, email, région, profession, mots-clés CV…)" oninput="filterTable()" />
       <span class="count-badge" id="countBadge"></span>
       <button class="btn-act ghost" onclick="loadData()">↻ Actualiser</button>
       <button class="btn-act" onclick="downloadCSV()">⬇ Télécharger CSV</button>
+      <button class="btn-act" id="syncCvBtn" onclick="syncMissingCvs()">🤖 Synchroniser les CV manquants</button>
     </div>
+    <div id="syncCvStatus" style="font-size:12px;color:#888;margin:-6px 0 14px"></div>
 
     <div id="loadingMsg">Chargement des fiches…</div>
     <div class="table-card" id="tableWrap"></div>
+  </div>
+
+  <!-- TAB : RECHERCHE IA -->
+  <div id="tab-match" class="dash-content" style="display:none">
+    <div class="card">
+      <h3>Recherche IA de profils</h3>
+      <p style="font-size:13px;color:#777;margin-bottom:14px">
+        Décrivez le profil recherché (diplôme, domaine d'étude, années d'expérience, thématique…).
+        L'IA cherche uniquement parmi les fiches enregistrées dans cette base de données.
+      </p>
+      <div class="ff">
+        <label>Besoin de recrutement</label>
+        <textarea id="matchCriteria" rows="6"
+          style="width:100%;min-height:130px;padding:12px;border:1.5px solid #9fa8da;border-radius:10px;resize:vertical;font-family:inherit;font-size:14px;color:#1a237e;background:#f5f6fc;"
+          placeholder="Ex : Diplôme universitaire Master et plus en géographie, socio-économie, sociologie. 7 ans d'expérience dans le secteur de l'eau, en particulier GIRE, dont 3 ans en changement climatique / adaptation."></textarea>
+      </div>
+      <button class="btn-act" id="matchBtn" onclick="searchProfiles()">Rechercher les profils qualifiés</button>
+      <button class="btn-act ghost" id="matchPdfBtn" onclick="downloadMatchPdf()" style="display:none;margin-left:10px">⬇ Télécharger en PDF</button>
+      <div id="matchResult" style="margin-top:16px;color:#1a237e;line-height:1.6;white-space:pre-wrap;font-size:14px"></div>
+    </div>
   </div>
 
   <!-- TAB : ADMINS -->
@@ -352,7 +375,8 @@
   var C = {
     date:0, nom:1, email:2, adresse:3, tel1:4, tel2:5,
     secteur:6, poste:7, niveau:8, structure:9, region:10,
-    district:11, observation:12, cv:13, prenoms:14, photo:15, profession:17
+    district:11, observation:12, cv:13, prenoms:14, photo:15, profession:17, cvSummary:18,
+    cvDomaine:19, cvExperience:20
   };
 
   var ROLES = ['', 'Membre', 'Responsable', 'Coordinateur', 'Superviseur'];
@@ -436,6 +460,7 @@
       var resp = await res.json();
       if (resp.status === 'ok') {
         _allData = resp.data.length > 1 ? resp.data.slice(1) : [];
+        _allData.forEach(function(r, i) { r._rowIndex = i + 2; });
         _curData = _allData.slice();
         renderStats(_allData);
         renderCharts(_allData);
@@ -566,13 +591,26 @@
   }
 
   function filterTable() {
-    var q = document.getElementById('searchIn').value.toLowerCase().trim();
+    var query = document.getElementById('searchIn').value.toLowerCase().trim();
     _sortCol = -1; _sortAsc = true;
-    _curData = q
-      ? _allData.filter(function(r) {
-          return r.some(function(c) { return (c || '').toString().toLowerCase().includes(q); });
-        })
-      : _allData.slice();
+    if (!query) {
+      _curData = _allData.slice();
+      renderTable(_curData); updateCount();
+      return;
+    }
+
+    var tokens = query.split(/\s+/).filter(Boolean);
+    _curData = _allData.filter(function(r) {
+      var fields = [];
+      r.forEach(function(c, index) {
+        if (index === C.date) return;
+        if (c != null) fields.push(c.toString().toLowerCase());
+      });
+      var role = getRole((r[C.email] || '').toString()).toLowerCase();
+      if (role) fields.push(role);
+      var text = fields.join(' ');
+      return tokens.every(function(token) { return text.includes(token); });
+    });
     renderTable(_curData); updateCount();
   }
 
@@ -600,9 +638,17 @@
     if (!_curData.length) { alert('Aucune donnée à exporter.'); return; }
     var hdrs = ['Date','Nom','Email','Adresse','Tél 1','Tél 2','Secteur','Poste',
                 'Niveau','Structure','Région','District','Observation','CV',
-                'Prénoms','Photo','Email 2','Profession','Rôle'];
+                'Prénoms','Photo','Email 2','Profession','Résumé CV',
+                "Domaine d'étude (IA)", "Années d'expérience (IA)", 'Rôle'];
     var rows = [hdrs].concat(_curData.map(function(r) {
-      return r.concat([getRole((r[C.email] || '').toString())]).map(function(c) {
+      var row = r.slice();
+      if (row.length < 21) {
+        row[18] = row[18] || '';
+        row[19] = row[19] || '';
+        row[20] = row[20] || '';
+      }
+      row.push(getRole((r[C.email] || '').toString()));
+      return row.map(function(c) {
         return '"' + (c || '').toString().replace(/"/g, '""') + '"';
       });
     }));
@@ -636,12 +682,28 @@
       ['District',            (r[C.district]   || '–').toString()],
       ['Observation',         (r[C.observation]|| '–').toString()],
       ['Rôle assigné',        role || 'Aucun'],
+      ['Résumé automatique CV', (r[C.cvSummary] || 'Aucun résumé CV disponible').toString()],
+      ["Domaine d'étude (IA)", (r[C.cvDomaine] || '–').toString()],
+      ["Années d'expérience (IA)", (r[C.cvExperience] || '–').toString()],
       ['Date soumission',     fmtD(r[C.date])]
     ];
     var body = fields.map(function(f) {
       return '<div class="mf"><span class="mf-label">' + escH(f[0]) + '</span>'
            + '<span class="mf-value">' + escH(f[1]) + '</span></div>';
     }).join('');
+    body += '<div class="mf" style="flex-direction:column;align-items:flex-start;gap:8px;">'
+          + '<span class="mf-label">Synchronisation IA</span>'
+          + '<button class="modal-link" type="button" id="resyncBtn" onclick="resyncCv(' + idx + ')">'
+          + 'Synchroniser le résumé IA</button>'
+          + '<div id="resyncStatus" style="color:#1a2d7d;font-size:13px"></div>'
+          + '</div>';
+    body += '<div class="mf" style="flex-direction:column;align-items:flex-start;gap:10px;">'
+          + '<span class="mf-label">Question IA</span>'
+          + '<span class="mf-value" style="width:100%;padding:0;">'
+          + '<textarea id="aiQuestion" rows="3" style="width:100%;min-height:90px;padding:12px;border:1.5px solid #9fa8da;border-radius:10px;resize:vertical;font-family:inherit;font-size:14px;color:#1a237e;"></textarea>'
+          + '<button class="modal-link" type="button" onclick="submitAiQuestion(' + idx + ')" style="margin-top:8px;display:inline-flex;">Demander à l\'IA</button>'
+          + '<div id="aiAnswer" style="margin-top:12px;color:#1a237e;line-height:1.5;white-space:pre-wrap;"></div>'
+          + '</span></div>';
     var links = [];
     if (r[C.cv])    links.push('<a href="' + escA(r[C.cv])    + '" target="_blank" class="modal-link">Télécharger le CV</a>');
     if (r[C.photo]) links.push('<a href="' + escA(r[C.photo]) + '" target="_blank" class="modal-link">Voir la photo</a>');
@@ -652,6 +714,221 @@
 
   function closeModal() { document.getElementById('modalOverlay').style.display = 'none'; }
   function closeModalOut(e) { if (e.target === document.getElementById('modalOverlay')) closeModal(); }
+
+  async function submitAiQuestion(idx) {
+    var textarea = document.getElementById('aiQuestion');
+    var answerEl = document.getElementById('aiAnswer');
+    if (!textarea || !answerEl) return;
+    var question = textarea.value.trim();
+    if (!question) {
+      answerEl.textContent = 'Veuillez saisir une question avant d’interroger l’IA.';
+      return;
+    }
+    answerEl.textContent = 'Recherche IA en cours…';
+    var row = _curData[idx];
+    if (!row) { answerEl.textContent = 'Donnée introuvable.'; return; }
+    try {
+      var payload = {
+        action: 'adminai',
+        user: _user,
+        pass: _pass,
+        question: question,
+        cvSummary: row[C.cvSummary] || '',
+        profession: row[C.profession] || '',
+        secteur: row[C.secteur] || '',
+        region: row[C.region] || ''
+      };
+      var res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        answerEl.textContent = data.answer || 'Aucune réponse IA disponible.';
+      } else if (data.status === 'unauthorized') {
+        answerEl.textContent = 'Accès non autorisé. Veuillez vous reconnecter.';
+      } else {
+        answerEl.textContent = data.message || 'Erreur lors de la requête IA.';
+      }
+    } catch (err) {
+      answerEl.textContent = 'Erreur de connexion IA. Vérifiez votre configuration.';
+    }
+  }
+
+  /* ── Synchronisation en lot des CV manquants ────────────────────────────── */
+  async function syncMissingCvs() {
+    var btn = document.getElementById('syncCvBtn');
+    var statusEl = document.getElementById('syncCvStatus');
+    btn.disabled = true;
+    var totalProcessed = 0, totalSkipped = 0, totalErrors = 0;
+
+    async function runBatch() {
+      statusEl.textContent = totalProcessed + ' fiche(s) synchronisée(s) jusqu\'ici… (en cours)';
+      try {
+        var res = await fetch(SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'resyncbatch', user: _user, pass: _pass })
+        });
+        var data = await res.json();
+
+        if (data.status === 'unauthorized') {
+          statusEl.textContent = 'Accès non autorisé. Veuillez vous reconnecter.';
+          btn.disabled = false;
+          return;
+        }
+        if (data.status !== 'ok') {
+          statusEl.textContent = data.message || 'Erreur lors de la synchronisation.';
+          btn.disabled = false;
+          return;
+        }
+
+        totalProcessed += data.processed;
+        totalSkipped   += data.skippedNoCv;
+        totalErrors    += data.errors;
+
+        if (data.stoppedEarly && data.remaining > 0) {
+          runBatch();
+        } else {
+          statusEl.textContent = '✓ Terminé : ' + totalProcessed + ' synchronisée(s), '
+            + totalSkipped + ' sans CV, ' + totalErrors + ' erreur(s).';
+          btn.disabled = false;
+          loadData();
+        }
+      } catch (err) {
+        statusEl.textContent = 'Erreur de connexion pendant la synchronisation.';
+        btn.disabled = false;
+      }
+    }
+
+    runBatch();
+  }
+
+  /* ── Recherche IA de profils ────────────────────────────────────────────── */
+  async function searchProfiles() {
+    var textarea = document.getElementById('matchCriteria');
+    var resultEl = document.getElementById('matchResult');
+    var criteria = textarea.value.trim();
+    if (!criteria) {
+      resultEl.textContent = 'Veuillez décrire le besoin de recrutement.';
+      return;
+    }
+    if (!_allData.length) {
+      resultEl.textContent = 'Aucune fiche chargée. Actualisez le tableau de bord d’abord.';
+      return;
+    }
+    var btn = document.getElementById('matchBtn');
+    var pdfBtn = document.getElementById('matchPdfBtn');
+    btn.disabled = true; btn.textContent = 'Recherche en cours…';
+    resultEl.textContent = '';
+    pdfBtn.style.display = 'none';
+    try {
+      var candidates = _allData.map(function(r) {
+        return {
+          nom:           [(r[C.prenoms] || ''), (r[C.nom] || '')].join(' ').trim(),
+          email:         (r[C.email] || '').toString(),
+          profession:    (r[C.profession] || '').toString(),
+          secteur:       (r[C.secteur] || '').toString(),
+          niveau:        (r[C.niveau] || '').toString(),
+          cvDomaine:     (r[C.cvDomaine] || '').toString(),
+          cvExperience:  (r[C.cvExperience] || '').toString(),
+          cvSummary:     (r[C.cvSummary] || '').toString()
+        };
+      });
+      var payload = { action: 'matchcandidates', user: _user, pass: _pass, criteria: criteria, candidates: candidates };
+      var res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        resultEl.textContent = data.result || 'Aucun résultat.';
+        if (data.result) pdfBtn.style.display = 'inline-block';
+      } else if (data.status === 'unauthorized') {
+        resultEl.textContent = 'Accès non autorisé. Veuillez vous reconnecter.';
+      } else {
+        resultEl.textContent = data.message || 'Erreur lors de la recherche IA.';
+      }
+    } catch (err) {
+      resultEl.textContent = 'Erreur de connexion IA. Vérifiez votre configuration.';
+    }
+    btn.disabled = false; btn.textContent = 'Rechercher les profils qualifiés';
+  }
+
+  function downloadMatchPdf() {
+    var criteria = document.getElementById('matchCriteria').value.trim();
+    var result   = document.getElementById('matchResult').textContent.trim();
+    if (!result) return;
+
+    var win = window.open('', '_blank');
+    if (!win) { alert('Veuillez autoriser les pop-ups pour télécharger le PDF.'); return; }
+
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"/>'
+      + '<title>Résultats recherche IA – IFL Bénin</title>'
+      + '<style>'
+      + 'body{font-family:Arial,sans-serif;color:#222;padding:32px;max-width:760px;margin:0 auto}'
+      + 'h1{font-size:18px;color:#1a2d7d;margin-bottom:4px}'
+      + '.sub{font-size:12px;color:#777;margin-bottom:24px}'
+      + 'h2{font-size:13px;color:#1a2d7d;text-transform:uppercase;letter-spacing:.4px;'
+      + '  border-bottom:2px solid #e8eaf6;padding-bottom:6px;margin:22px 0 10px}'
+      + '.criteria,.result{white-space:pre-wrap;font-size:14px;line-height:1.6}'
+      + '.criteria{background:#f5f6fc;border-radius:8px;padding:14px 16px}'
+      + '</style></head><body>'
+      + '<h1>Recherche IA de profils</h1>'
+      + '<p class="sub">Ligue Internationale de l\'Amitié – Bénin — ' + new Date().toLocaleDateString('fr-FR') + '</p>'
+      + '<h2>Besoin de recrutement</h2>'
+      + '<div class="criteria">' + escH(criteria) + '</div>'
+      + '<h2>Profils correspondants</h2>'
+      + '<div class="result">' + escH(result) + '</div>'
+      + '</body></html>';
+
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(function() { win.print(); }, 300);
+  }
+
+  async function resyncCv(idx) {
+    var btn = document.getElementById('resyncBtn');
+    var statusEl = document.getElementById('resyncStatus');
+    var row = _curData[idx];
+    if (!row || !row._rowIndex) { statusEl.textContent = 'Fiche introuvable.'; return; }
+    btn.disabled = true; btn.textContent = 'Synchronisation en cours…';
+    statusEl.textContent = '';
+    try {
+      var payload = { action: 'resynccv', user: _user, pass: _pass, rowIndex: row._rowIndex };
+      var res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var data = await res.json();
+      if (data.status === 'ok') {
+        row[C.cvSummary]    = data.summary || '';
+        row[C.cvDomaine]    = data.domaineEtude || '';
+        row[C.cvExperience] = data.anneesExperience || '';
+        var master = _allData.filter(function(r) { return r._rowIndex === row._rowIndex; })[0];
+        if (master) {
+          master[C.cvSummary] = row[C.cvSummary];
+          master[C.cvDomaine] = row[C.cvDomaine];
+          master[C.cvExperience] = row[C.cvExperience];
+        }
+        openModal(idx);
+        document.getElementById('resyncStatus').textContent = '✓ Résumé IA synchronisé.';
+      } else if (data.status === 'unauthorized') {
+        statusEl.textContent = 'Accès non autorisé. Veuillez vous reconnecter.';
+      } else {
+        statusEl.textContent = data.message || 'Erreur lors de la synchronisation.';
+      }
+    } catch (err) {
+      statusEl.textContent = 'Erreur de connexion. Vérifiez votre configuration.';
+    }
+    var btnAgain = document.getElementById('resyncBtn');
+    if (btnAgain) { btnAgain.disabled = false; btnAgain.textContent = 'Synchroniser le résumé IA'; }
+  }
 
   /* ── Gestion admins ─────────────────────────────────────────────────────── */
   async function loadAdmins() {
@@ -704,7 +981,7 @@
 
   /* ── Navigation ─────────────────────────────────────────────────────────── */
   function switchTab(t) {
-    ['dashboard', 'admins'].forEach(function(x) {
+    ['dashboard', 'match', 'admins'].forEach(function(x) {
       document.getElementById('tab-' + x).style.display = (x === t) ? 'block' : 'none';
       var b = document.querySelector('.tab-btn[data-tab="' + x + '"]');
       if (b) b.classList.toggle('active', x === t);

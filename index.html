@@ -387,6 +387,8 @@
       #completePanel { padding: 20px; }
     }
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.20/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.5.141/pdf.min.js"></script>
 </head>
 <body>
 
@@ -527,9 +529,17 @@
 
         <div class="field file-field">
           <label>CV / Document <span class="req">*</span></label>
-          <input type="file" name="cv"
+          <input id="cvInput" type="file" name="cv"
                  accept=".pdf,.doc,.docx,.odt,.jpg,.jpeg,.png,.gif,.bmp,.xlsx,.pptx"
+                 onchange="validateCvInput(event); analyzeCvFile(event.target.files[0]);"
                  required />
+          <p id="cvError" class="msg-err" style="display:none;margin-top:8px;font-size:13px"></p>
+        </div>
+
+        <div id="cvAnalysis" style="display:none;margin-top:18px;padding:16px;background:#f5f6fc;border-radius:10px;">
+          <h4 style="margin:0 0 10px;font-size:15px;color:#1a2d7d">Analyse automatique du CV</h4>
+          <p id="cvSummaryText" style="margin:0 0 10px;color:#333;font-size:14px;line-height:1.5"></p>
+          <div id="cvSuggestion" style="margin:0;color:#1a237e;font-size:14px;line-height:1.5"></div>
         </div>
 
       </div><!-- /grid-2 -->
@@ -651,7 +661,188 @@
     reader.readAsDataURL(file);
   }
 
-  // ── Conversion fichier → base64 ───────────────────────────────────────────
+  var _cvSummaryText = '';
+  var _cvText = '';
+
+  // ── Extraction et analyse du CV ───────────────────────────────────────────
+  var ALLOWED_CV_TYPES = [
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.oasis.opendocument.text',
+    'image/jpeg',
+    'image/png',
+    'image/gif',
+    'image/bmp',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  ];
+  var MAX_CV_SIZE = 5 * 1024 * 1024; // 5 Mo
+
+  function validateCvFile(file) {
+    if (!file) return { ok: false, message: 'Veuillez sélectionner un fichier CV.' };
+    if (ALLOWED_CV_TYPES.indexOf(file.type) === -1 && !file.name.toLowerCase().match(/\.(pdf|docx?|odt|jpe?g|png|gif|bmp|xlsx|pptx)$/)) {
+      return { ok: false, message: 'Type de fichier non accepté. Utilisez PDF, DOC/DOCX, ODT, JPG, PNG, GIF, BMP, XLSX ou PPTX.' };
+    }
+    if (file.size > MAX_CV_SIZE) {
+      return { ok: false, message: 'Le fichier est trop volumineux. Limite 5 Mo maximum.' };
+    }
+    return { ok: true };
+  }
+
+  function validateCvInput(event) {
+    var input = event.target;
+    var error = document.getElementById('cvError');
+    error.style.display = 'none';
+    error.textContent = '';
+    var result = validateCvFile(input.files[0]);
+    if (!result.ok) {
+      error.textContent = result.message;
+      error.style.display = 'block';
+      input.style.borderColor = '#e53935';
+      return false;
+    }
+    input.style.borderColor = '';
+    return true;
+  }
+
+  function readFileAsArrayBuffer(file) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function(ev) { resolve(ev.target.result); };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function readFileAsText(file) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function(ev) { resolve(ev.target.result); };
+      reader.onerror = reject;
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+
+  async function extractTextFromFile(file) {
+    if (!file) return '';
+    var name = file.name.toLowerCase();
+    var type = file.type || '';
+    try {
+      if (type.startsWith('text/') || name.endsWith('.txt')) {
+        return await readFileAsText(file);
+      }
+      if (name.endsWith('.docx') && window.mammoth) {
+        var arrayBuffer = await readFileAsArrayBuffer(file);
+        var result = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+        return result.value || '';
+      }
+      if (name.endsWith('.pdf') && window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.5.141/pdf.worker.min.js';
+        var arrayBuffer = await readFileAsArrayBuffer(file);
+        var pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        var text = '';
+        for (var i = 1; i <= pdf.numPages; i++) {
+          var page = await pdf.getPage(i);
+          var content = await page.getTextContent();
+          text += content.items.map(function(item) { return item.str; }).join(' ') + '\n';
+        }
+        return text;
+      }
+      if (name.endsWith('.doc') || name.endsWith('.odt') || name.endsWith('.xlsx') || name.endsWith('.pptx')) {
+        return 'Analyse automatique non disponible pour ce format. Veuillez préférer un PDF, DOCX ou TXT pour extraction.';
+      }
+    } catch (err) {
+      return 'Impossible d’extraire le texte du CV : ' + err.message;
+    }
+    return '';
+  }
+
+  function normalizeText(text) {
+    return text.replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function computeCvSuggestions(text, formData) {
+    var words = normalizeText(text);
+    if (!words) {
+      return {
+        summary: 'Aucun texte exploitable n’a pu être extrait du CV. Veuillez vérifier le format ou le contenu du fichier.',
+        suggestion: 'Préférez un CV en texte clair ou en DOCX/PDF contenant du texte sélectionnable.'
+      };
+    }
+
+    var keywords = ['expérience', 'compétence', 'formation', 'diplôme', 'projet', 'stage', 'management', 'bilingue', 'anglais', 'français', 'marketing', 'enseignement', 'finance', 'informatique', 'communication'];
+    var found = keywords.filter(function(k) { return words.indexOf(k) !== -1; });
+    var score = 50 + Math.min(30, found.length * 5);
+    var matches = [];
+    if (formData.profession && words.indexOf(formData.profession.toLowerCase()) !== -1) {
+      matches.push('profession');
+      score += 10;
+    }
+    if (formData.region && words.indexOf(formData.region.toLowerCase()) !== -1) {
+      matches.push('région');
+      score += 5;
+    }
+    if (formData.secteur && words.indexOf(formData.secteur.toLowerCase()) !== -1) {
+      matches.push('secteur');
+      score += 5;
+    }
+
+    var summaryText = 'Mots-clés détectés : ' + (found.length ? found.join(', ') : 'aucun mot-clé important détecté') + '. ';
+    summaryText += 'Longueur estimée : ' + words.split(' ').length + ' mots. ';
+    if (matches.length) {
+      summaryText += 'Correspondance avec le profil : ' + matches.join(', ') + '. ';
+    } else {
+      summaryText += 'Aucune correspondance directe avec la profession / secteur / région renseigné(e). ';
+    }
+
+    var suggestions = [];
+    if (!found.length) {
+      suggestions.push('Ajoutez des termes d’expérience et de compétences spécifiques (ex : gestion de projet, vente, analyse, formation).');
+    }
+    if (formData.profession && words.indexOf(formData.profession.toLowerCase()) === -1) {
+      suggestions.push('Mentionnez clairement votre profession ou votre fonction dans le CV.');
+    }
+    if (formData.secteur && words.indexOf(formData.secteur.toLowerCase()) === -1) {
+      suggestions.push('Précisez le secteur d’activité si ce n’est pas déjà présent.');
+    }
+    if (words.indexOf('réalis') === -1 && words.indexOf('projet') !== -1) {
+      suggestions.push('Ajoutez des réalisations chiffrées ou des projets concrets.');
+    }
+    if (!formData.tel1 && words.indexOf('tél') === -1) {
+      suggestions.push('Assurez-vous que le CV contient au moins une information de contact.');
+    }
+    if (score <= 60) {
+      suggestions.push('Le CV semble court ou peu structuré. Renforcez le contenu avec des expériences, formations et compétences claires.');
+    }
+
+    return {
+      summary: summaryText,
+      suggestion: suggestions.length ? suggestions.join(' ') : 'Le CV présente de bonnes informations. Vérifiez simplement l’orthographe et la structure.'
+    };
+  }
+
+  async function analyzeCvFile(file) {
+    if (!file) {
+      document.getElementById('cvAnalysis').style.display = 'none';
+      return;
+    }
+    document.getElementById('cvAnalysis').style.display = 'block';
+    document.getElementById('cvSummaryText').textContent = 'Analyse en cours…';
+    document.getElementById('cvSuggestion').textContent = '';
+    var text = await extractTextFromFile(file);
+    var formData = {
+      profession: document.querySelector('input[name="profession"]').value || '',
+      region: document.querySelector('input[name="region"]').value || '',
+      secteur: document.querySelector('input[name="secteur"]').value || ''
+    };
+    var result = computeCvSuggestions(text, formData);
+    document.getElementById('cvSummaryText').textContent = result.summary;
+    document.getElementById('cvSuggestion').textContent = 'Suggestion : ' + result.suggestion;
+    _cvSummaryText = result.summary + '\nSuggestion : ' + result.suggestion;
+    _cvText = text;
+  }
+
   function fileToBase64(file) {
     return new Promise(function(resolve, reject) {
       var reader = new FileReader();
@@ -680,6 +871,12 @@
       return;
     }
 
+    var cvInput = document.getElementById('cvInput');
+    if (!validateCvInput({ target: cvInput })) {
+      alert('Veuillez corriger le fichier CV avant l’envoi.');
+      return;
+    }
+
     // Indicateur d'envoi
     var btn = document.querySelector('#mainForm .btn-submit');
     btn.textContent = 'Envoi en cours…';
@@ -691,6 +888,13 @@
     fd.forEach(function(value, key) {
       if (typeof value === 'string') data[key] = value;
     });
+
+    if (_cvSummaryText) {
+      data.cvSummary = _cvSummaryText;
+    }
+    if (_cvText) {
+      data.cvText = _cvText;
+    }
 
     // CV → base64
     var cvInput = this.querySelector('input[name="cv"]');
@@ -714,11 +918,13 @@
     try {
       await fetch(SCRIPT_URL, {
         method:  'POST',
-        mode:    'no-cors',
+        mode:    'cors',
         headers: { 'Content-Type': 'text/plain' },
         body:    JSON.stringify(data)
       });
-    } catch (err) {}
+    } catch (err) {
+      console.warn('Envoi du formulaire échoué :', err);
+    }
 
     // Affichage du message de succès
     document.querySelector('.photo-row').style.display  = 'none';

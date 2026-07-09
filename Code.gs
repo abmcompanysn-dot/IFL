@@ -7,7 +7,7 @@ var UPLOAD_FOLDER_NAME = "IFL – Pièces jointes";
 // Col1:Horodateur | Col2:Nom | Col3:Email | Col4:Adresse | Col5:Tél1 | Col6:Tél2
 // Col7:Secteur | Col8:Poste | Col9:Niveau | Col10:Structure | Col11:Région
 // Col12:District | Col13:Observation | Col14:CV | Col15:Prénoms | Col16:Photo
-// Col17:Email(dup) | Col18:Profession
+// Col17:Email(dup) | Col18:Profession | Col19:Résumé automatique CV
 var COL_MAP = {
   nom:         2,
   adresse:     4,
@@ -41,6 +41,46 @@ function saveFileToDrive(base64, mimeType, filename) {
   return file.getUrl();
 }
 
+// ── Extraction de texte depuis un fichier Drive (CV) ───────────────────────
+function extractDriveFileIdFromUrl(url) {
+  if (!url) return '';
+  var m = url.toString().match(/[-\w]{25,}/);
+  return m ? m[0] : '';
+}
+
+function extractTextFromDriveFile(fileId) {
+  // Nécessite le service avancé "Drive API" activé dans le projet Apps Script.
+  var tempFile = null;
+  try {
+    var blob = DriveApp.getFileById(fileId).getBlob();
+
+    if (typeof Drive === 'undefined') {
+      return { text: '', error: "Le service avancé Drive n'est pas activé (identifiant global 'Drive' introuvable). Activez-le via Services (+) dans l'éditeur Apps Script." };
+    }
+
+    var isV3 = !!(Drive.Files && Drive.Files.create);
+    if (isV3) {
+      var resourceV3 = { name: 'tmp_ocr_' + fileId, mimeType: MimeType.GOOGLE_DOCS };
+      tempFile = Drive.Files.create(resourceV3, blob, { ocrLanguage: 'fr' });
+    } else {
+      var resourceV2 = { title: 'tmp_ocr_' + fileId, mimeType: MimeType.GOOGLE_DOCS };
+      tempFile = Drive.Files.insert(resourceV2, blob, { convert: true, ocr: true, ocrLanguage: 'fr' });
+    }
+
+    var text = DocumentApp.openById(tempFile.id).getBody().getText();
+    return { text: (text || '').trim(), error: '' };
+  } catch (err) {
+    return { text: '', error: err && err.message ? err.message : err.toString() };
+  } finally {
+    if (tempFile && tempFile.id) {
+      try {
+        if (Drive.Files.remove) { Drive.Files.remove(tempFile.id); }
+        else { Drive.Files.delete(tempFile.id); }
+      } catch (ex) {}
+    }
+  }
+}
+
 // ── GET : recherche d'une fiche par email + actions admin ─────────────────
 function doGet(e) {
   var action = (e.parameter.action || '').toLowerCase();
@@ -65,9 +105,7 @@ function doGet(e) {
       e.parameter.newpass || ''
     );
   }
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'ok' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return createJsonResponse({ status: 'ok' });
 }
 
 function lookupRecord(email) {
@@ -99,21 +137,357 @@ function lookupRecord(email) {
       if (!val) missing.push({ key: key, label: labels[key] });
     });
 
-    return ContentService
-      .createTextOutput(JSON.stringify({
-        status:   'found',
-        rowIndex: i + 1,
-        missing:  missing
-      }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return createJsonResponse({
+      status:   'found',
+      rowIndex: i + 1,
+      missing:  missing
+    });
   }
 
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'not_found' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return createJsonResponse({ status: 'not_found' });
 }
 
 // ── POST : soumission nouvelle fiche OU mise à jour ────────────────────────
+function createJsonResponse(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON)
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+function doOptions(e) {
+  return ContentService
+    .createTextOutput('')
+    .setMimeType(ContentService.MimeType.JSON)
+    .setHeader('Access-Control-Allow-Origin', '*')
+    .setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    .setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+
+var AI_GROQ_KEY    = 'GROQ_API_KEY';
+var AI_GROQ_MODEL  = 'GROQ_MODEL';
+var AI_OPENAI_KEY  = 'OPENAI_API_KEY';
+var AI_OPENAI_MODEL = 'OPENAI_MODEL';
+
+function getAiConfig() {
+  // Placez vos clés dans les propriétés de script de Google Apps Script :
+  // GROQ_API_KEY, GROQ_MODEL ou OPENAI_API_KEY, OPENAI_MODEL.
+  var props = PropertiesService.getScriptProperties();
+  return {
+    groqKey: props.getProperty(AI_GROQ_KEY),
+    groqModel: props.getProperty(AI_GROQ_MODEL) || 'llama-3.3-70b-versatile',
+    openaiKey: props.getProperty(AI_OPENAI_KEY),
+    openaiModel: props.getProperty(AI_OPENAI_MODEL) || 'gpt-4o-mini'
+  };
+}
+
+function callGroqModel(prompt, apiKey, model) {
+  try {
+    var url = 'https://api.groq.com/openai/v1/chat/completions';
+    var body = {
+      model: model,
+      messages: [
+        { role: 'system', content: 'Vous êtes un assistant qui résume des CV en français.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.2,
+      max_tokens: 800
+    };
+    var response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + apiKey },
+      payload: JSON.stringify(body),
+      muteHttpExceptions: true
+    });
+    var code = response.getResponseCode();
+    if (code !== 200) {
+      return { content: null, error: 'Groq HTTP ' + code + ' : ' + response.getContentText().slice(0, 300) };
+    }
+    var result = JSON.parse(response.getContentText());
+    if (result.choices && result.choices.length > 0 && result.choices[0].message) {
+      return { content: result.choices[0].message.content, error: '' };
+    }
+    return { content: null, error: 'Réponse Groq inattendue : ' + response.getContentText().slice(0, 300) };
+  } catch (err) {
+    return { content: null, error: 'Exception Groq : ' + (err && err.message ? err.message : err.toString()) };
+  }
+}
+
+function callOpenAiModel(prompt, model, apiKey) {
+  try {
+    var url = 'https://api.openai.com/v1/chat/completions';
+    var body = {
+      model: model,
+      messages: [
+        { role: 'system', content: 'Vous êtes un assistant qui résume des CV en français.' },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.2,
+      max_tokens: 600
+    };
+    var response = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + apiKey },
+      payload: JSON.stringify(body),
+      muteHttpExceptions: true
+    });
+    var code = response.getResponseCode();
+    if (code !== 200) {
+      return { content: null, error: 'OpenAI HTTP ' + code + ' : ' + response.getContentText().slice(0, 300) };
+    }
+    var result = JSON.parse(response.getContentText());
+    if (result.choices && result.choices.length > 0 && result.choices[0].message) {
+      return { content: result.choices[0].message.content, error: '' };
+    }
+    return { content: null, error: 'Réponse OpenAI inattendue : ' + response.getContentText().slice(0, 300) };
+  } catch (err) {
+    return { content: null, error: 'Exception OpenAI : ' + (err && err.message ? err.message : err.toString()) };
+  }
+}
+
+function callAiModel(prompt) {
+  var cfg = getAiConfig();
+  if (cfg.groqKey) {
+    return callGroqModel(prompt, cfg.groqKey, cfg.groqModel);
+  }
+  if (cfg.openaiKey) {
+    return callOpenAiModel(prompt, cfg.openaiModel, cfg.openaiKey);
+  }
+  return { content: null, error: "Aucune clé API IA configurée (propriété de script GROQ_API_KEY ou OPENAI_API_KEY manquante)." };
+}
+
+function buildCvAiPrompt(cvText, formData) {
+  var prompt = 'Analyse ce CV en français. Fais un résumé structuré des compétences, expériences, formations, et indique la correspondance avec les informations déclarées.';
+  if (formData.profession) prompt += '\nProfession déclarée: ' + formData.profession;
+  if (formData.secteur) prompt += '\nSecteur déclaré: ' + formData.secteur;
+  if (formData.region) prompt += '\nRégion déclarée: ' + formData.region;
+  prompt += '\n\nTexte du CV :\n' + cvText;
+  prompt += '\n\nRéponds UNIQUEMENT avec un objet JSON strict (pas de texte autour), au format :'
+    + '\n{"resume": "court résumé clair et une recommandation simple",'
+    + ' "domaine_etude": "domaine d\'étude / de formation détecté dans le CV, chaîne vide si indéterminable",'
+    + ' "annees_experience": "nombre d\'années d\'expérience professionnelle détecté, chaîne vide si indéterminable"}';
+  return prompt;
+}
+
+function runCvAiAnalysis(cvText, formData) {
+  if (!cvText) return { summary: '', domaineEtude: '', anneesExperience: '', error: '' };
+  var prompt = buildCvAiPrompt(cvText, formData || {});
+  var aiResult = callAiModel(prompt);
+  if (!aiResult.content) {
+    return { summary: '', domaineEtude: '', anneesExperience: '', error: aiResult.error || 'Aucune réponse IA.' };
+  }
+
+  var raw = aiResult.content.toString().trim();
+  try {
+    var jsonMatch = raw.match(/\{[\s\S]*\}/);
+    var parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+    return {
+      summary: (parsed.resume || '').toString().trim(),
+      domaineEtude: (parsed.domaine_etude || '').toString().trim(),
+      anneesExperience: (parsed.annees_experience || '').toString().trim(),
+      error: ''
+    };
+  } catch (ex) {
+    return { summary: raw, domaineEtude: '', anneesExperience: '', error: '' };
+  }
+}
+
+function buildAdminAiPrompt(question, cvSummary, formData) {
+  var prompt = 'Vous êtes un assistant RH. Réponds en français de façon claire et concise.';
+  if (question) prompt += '\nQuestion : ' + question;
+  if (cvSummary) prompt += '\nRésumé du CV : ' + cvSummary;
+  if (formData.profession) prompt += '\nProfession déclarée : ' + formData.profession;
+  if (formData.secteur) prompt += '\nSecteur déclaré : ' + formData.secteur;
+  if (formData.region) prompt += '\nRégion déclarée : ' + formData.region;
+  prompt += '\n\nDonne une réponse structurée et une recommandation simple.';
+  return prompt;
+}
+
+function runAdminAiQuestion(question, cvSummary, formData) {
+  if (!question) return 'Veuillez saisir une question pour l’IA.';
+  var prompt = buildAdminAiPrompt(question, cvSummary || '', formData || {});
+  var aiResult = callAiModel(prompt);
+  return aiResult.content ? aiResult.content.toString().trim() : (aiResult.error || 'Aucune réponse IA disponible.');
+}
+
+function buildMatchPrompt(criteria, candidates) {
+  var prompt = 'Vous êtes un assistant de recrutement. Voici une liste de profils enregistrés '
+    + 'dans notre base de données interne (fiches et CV soumis). Analysez UNIQUEMENT cette liste : '
+    + 'n\'inventez aucune information et ne recherchez rien en dehors des profils fournis ci-dessous.'
+    + '\n\nPour le besoin de recrutement décrit, identifiez les profils qui correspondent le mieux. '
+    + 'Tenez compte des années d\'expérience minimum demandées, et acceptez les domaines d\'étude '
+    + 'proches ou connexes du domaine demandé (pas seulement une correspondance exacte de mot). '
+    + 'Pour chaque profil retenu, indiquez : nom complet, e-mail, et une courte justification '
+    + '(diplôme/domaine, années d\'expérience, éléments pertinents du CV). '
+    + 'Si aucun profil ne correspond, dites-le clairement plutôt que d\'inventer une réponse.';
+
+  prompt += '\n\nBesoin de recrutement :\n' + criteria;
+
+  prompt += '\n\nProfils de la base de données interne :\n';
+  candidates.forEach(function(c, i) {
+    var resume = (c.cvSummary || '').toString().trim();
+    if (resume.length > 400) resume = resume.slice(0, 400) + '…';
+    prompt += '\n' + (i + 1) + '. Nom: ' + (c.nom || '–')
+      + ' | Email: ' + (c.email || '–')
+      + ' | Profession: ' + (c.profession || '–')
+      + ' | Secteur: ' + (c.secteur || '–')
+      + ' | Niveau d\'étude déclaré: ' + (c.niveau || '–')
+      + ' | Domaine d\'étude (détecté): ' + (c.cvDomaine || '–')
+      + ' | Années d\'expérience (détecté): ' + (c.cvExperience || '–')
+      + ' | Résumé CV: ' + (resume || '–');
+  });
+
+  return prompt;
+}
+
+function runCandidateMatch(criteria, candidates) {
+  if (!criteria) return 'Veuillez décrire le besoin de recrutement.';
+  if (!candidates || !candidates.length) return 'Aucun profil disponible dans la base de données.';
+  var prompt = buildMatchPrompt(criteria, candidates);
+  var aiResult = callAiModel(prompt);
+  return aiResult.content ? aiResult.content.toString().trim() : (aiResult.error || 'Aucune réponse IA disponible.');
+}
+
+// ── Resynchronisation du résumé IA d'une fiche existante ────────────────────
+function resyncCvSummary(rowIndex) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var row   = sheet.getRange(rowIndex, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  var cvUrl      = (row[13] || '').toString();
+  var profession = (row[17] || '').toString();
+  var secteur    = (row[6]  || '').toString();
+  var region     = (row[10] || '').toString();
+
+  if (!cvUrl) {
+    return { status: 'error', message: 'Aucun CV enregistré pour cette fiche.' };
+  }
+
+  var fileId = extractDriveFileIdFromUrl(cvUrl);
+  if (!fileId) {
+    return { status: 'error', message: "Impossible d'identifier le fichier Drive à partir du lien CV : " + cvUrl };
+  }
+
+  var extraction = extractTextFromDriveFile(fileId);
+  if (!extraction.text) {
+    return { status: 'error', message: "Impossible d'extraire le texte du CV : " + (extraction.error || 'raison inconnue') };
+  }
+
+  var aiResult = runCvAiAnalysis(extraction.text, { profession: profession, secteur: secteur, region: region });
+  if (!aiResult.summary) {
+    return { status: 'error', message: "L'IA n'a pas pu générer de résumé pour ce CV : " + (aiResult.error || 'raison inconnue') };
+  }
+
+  sheet.getRange(rowIndex, 19).setValue(aiResult.summary);
+  sheet.getRange(rowIndex, 20).setValue(aiResult.domaineEtude);
+  sheet.getRange(rowIndex, 21).setValue(aiResult.anneesExperience);
+
+  return {
+    status: 'ok',
+    summary: aiResult.summary,
+    domaineEtude: aiResult.domaineEtude,
+    anneesExperience: aiResult.anneesExperience
+  };
+}
+
+// ── Test de synchronisation IA sur une seule fiche (avant lot complet) ──────
+function syncOneCvSummaryTest() {
+  var sheet   = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var lastRow = sheet.getLastRow();
+  var ui      = SpreadsheetApp.getUi();
+
+  for (var row = 2; row <= lastRow; row++) {
+    var existingSummary = sheet.getRange(row, 19).getValue();
+    if (existingSummary && existingSummary.toString().trim()) continue;
+
+    var cvUrl = sheet.getRange(row, 14).getValue();
+    if (!cvUrl || !cvUrl.toString().trim()) continue;
+
+    var nom    = sheet.getRange(row, 2).getValue();
+    var result = resyncCvSummary(row);
+
+    if (result.status === 'ok') {
+      ui.alert(
+        'Test réussi – ligne ' + row + ' (' + nom + ')',
+        'Résumé : ' + result.summary
+          + '\n\nDomaine d\'étude : ' + (result.domaineEtude || '–')
+          + '\nAnnées d\'expérience : ' + (result.anneesExperience || '–')
+          + '\n\nSi ce résultat vous convient, lancez « Synchroniser tous les résumés IA » pour traiter le reste.',
+        ui.ButtonSet.OK
+      );
+    } else {
+      ui.alert(
+        'Échec du test – ligne ' + row + ' (' + nom + ')',
+        result.message || 'Erreur inconnue.',
+        ui.ButtonSet.OK
+      );
+    }
+    return;
+  }
+
+  ui.alert('Test de synchronisation IA', 'Aucune fiche à tester : toutes les fiches ont déjà un résumé ou aucun CV n\'est disponible.', ui.ButtonSet.OK);
+}
+
+// ── Synchronisation en lot des résumés IA (fiches sans résumé) ──────────────
+var CV_SYNC_TIME_BUDGET_MS = 5 * 60 * 1000; // marge sous la limite d'exécution Apps Script (~6 min)
+
+function runBatchCvSync() {
+  var sheet   = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var lastRow = sheet.getLastRow();
+  var start   = new Date().getTime();
+
+  var processed = 0, skippedNoCv = 0, errors = 0, stoppedEarly = false, row;
+
+  for (row = 2; row <= lastRow; row++) {
+    if (new Date().getTime() - start > CV_SYNC_TIME_BUDGET_MS) {
+      stoppedEarly = true;
+      break;
+    }
+
+    var existingSummary = sheet.getRange(row, 19).getValue();
+    if (existingSummary && existingSummary.toString().trim()) continue;
+
+    var cvUrl = sheet.getRange(row, 14).getValue();
+    if (!cvUrl || !cvUrl.toString().trim()) { skippedNoCv++; continue; }
+
+    var result = resyncCvSummary(row);
+    if (result.status === 'ok') processed++; else errors++;
+  }
+
+  var remaining = 0;
+  var scanFrom  = stoppedEarly ? row : lastRow + 1;
+  for (var r = scanFrom; r <= lastRow; r++) {
+    var s   = sheet.getRange(r, 19).getValue();
+    var url = sheet.getRange(r, 14).getValue();
+    if ((!s || !s.toString().trim()) && url && url.toString().trim()) remaining++;
+  }
+
+  return {
+    processed: processed,
+    skippedNoCv: skippedNoCv,
+    errors: errors,
+    remaining: remaining,
+    stoppedEarly: stoppedEarly
+  };
+}
+
+function syncAllCvSummaries() {
+  var r = runBatchCvSync();
+
+  var msg = r.processed + ' fiche(s) synchronisée(s).\n'
+    + r.skippedNoCv + ' fiche(s) sans CV ignorée(s).\n'
+    + r.errors + ' erreur(s) d\'extraction/analyse.';
+  msg += r.stoppedEarly
+    ? '\n\n⏱ Limite de temps atteinte. Il reste au moins ' + r.remaining + ' fiche(s) à traiter.'
+      + '\nRelancez « Synchroniser tous les résumés IA » pour continuer.'
+    : '\n\n✓ Toutes les fiches ont été parcourues.';
+
+  SpreadsheetApp.getUi().alert('Synchronisation des résumés IA', msg, SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
 function doPost(e) {
   try {
     // Lecture JSON (envoyé en text/plain) avec fallback url-encoded
@@ -125,9 +499,69 @@ function doPost(e) {
 
     if (action === 'update') {
       updateRecord(p);
-      return ContentService
-        .createTextOutput(JSON.stringify({ status: 'updated' }))
-        .setMimeType(ContentService.MimeType.JSON);
+      return createJsonResponse({ status: 'updated' });
+    }
+
+    if (action === 'adminai') {
+      if (!verifyAdmin(p.user || '', p.pass || '')) {
+        return createJsonResponse({ status: 'unauthorized' });
+      }
+      var answer = runAdminAiQuestion(p.question || '', p.cvSummary || '', {
+        profession: p.profession || '',
+        secteur: p.secteur || '',
+        region: p.region || ''
+      });
+      return createJsonResponse({ status: 'ok', answer: answer || 'Aucune réponse IA disponible.' });
+    }
+
+    if (action === 'matchcandidates') {
+      if (!verifyAdmin(p.user || '', p.pass || '')) {
+        return createJsonResponse({ status: 'unauthorized' });
+      }
+      var matchResult = runCandidateMatch(p.criteria || '', p.candidates || []);
+      return createJsonResponse({ status: 'ok', result: matchResult });
+    }
+
+    if (action === 'resynccv') {
+      if (!verifyAdmin(p.user || '', p.pass || '')) {
+        return createJsonResponse({ status: 'unauthorized' });
+      }
+      var rowIndex = parseInt(p.rowIndex, 10);
+      if (!rowIndex) return createJsonResponse({ status: 'error', message: 'rowIndex manquant' });
+      return createJsonResponse(resyncCvSummary(rowIndex));
+    }
+
+    if (action === 'resyncbatch') {
+      if (!verifyAdmin(p.user || '', p.pass || '')) {
+        return createJsonResponse({ status: 'unauthorized' });
+      }
+      var batchResult = runBatchCvSync();
+      return createJsonResponse({
+        status: 'ok',
+        processed: batchResult.processed,
+        skippedNoCv: batchResult.skippedNoCv,
+        errors: batchResult.errors,
+        remaining: batchResult.remaining,
+        stoppedEarly: batchResult.stoppedEarly
+      });
+    }
+
+    // ── Enrichissement IA CV avant enregistrement ─────────────────────────
+    if (p.cvText) {
+      try {
+        var aiResult = runCvAiAnalysis(p.cvText, {
+          profession: p.profession || '',
+          secteur: p.secteur || '',
+          region: p.region || ''
+        });
+        if (aiResult.summary) {
+          p.cvSummary = aiResult.summary;
+        }
+        p.cvDomaine    = aiResult.domaineEtude || '';
+        p.cvExperience = aiResult.anneesExperience || '';
+      } catch (ex) {
+        // Ne pas bloquer l'enregistrement si l'IA échoue.
+      }
     }
 
     // ── Upload CV et Photo vers Google Drive ──────────────────────────────
@@ -162,7 +596,10 @@ function doPost(e) {
       p.prenoms     || "", // Col 15 : Prénoms
       photoUrl,            // Col 16 : Photo (lien Drive)
       p.email       || "", // Col 17 : Adresse e-mail (doublon)
-      p.profession  || ""  // Col 18 : Profession
+      p.profession  || "", // Col 18 : Profession
+      p.cvSummary   || "", // Col 19 : Résumé automatique extrait du CV
+      p.cvDomaine   || "", // Col 20 : Domaine d'étude détecté (IA)
+      p.cvExperience|| ""  // Col 21 : Années d'expérience détectées (IA)
     ]);
 
     var fullName   = ((p.prenoms || "") + " " + (p.nom || "")).trim();
@@ -182,14 +619,10 @@ function doPost(e) {
       });
     }
 
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: "success" }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return createJsonResponse({ status: 'success' });
 
   } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return createJsonResponse({ status: 'error', message: err.toString() });
   }
 }
 
@@ -225,6 +658,7 @@ function buildOwnerEmail(p, fullName, cvUrl, photoUrl) {
     ["Région",               p.region      || "–"],
     ["District",             p.district    || "–"],
     ["Observation",          p.observation || "–"],
+    ["Résumé automatique CV",p.cvSummary   || "–"],
     ["CV",                   cvLink],
     ["Photo",                photoLink]
   ];
@@ -319,49 +753,62 @@ function verifyAdmin(u, p) {
 
 function adminLogin(u, p) {
   var ok = !!(u && p && verifyAdmin(u, p));
-  return ContentService
-    .createTextOutput(JSON.stringify(ok
-      ? { status: 'ok' }
-      : { status: 'error', message: 'Identifiants incorrects' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return createJsonResponse(ok
+    ? { status: 'ok' }
+    : { status: 'error', message: 'Identifiants incorrects' });
 }
 
 function getAdminData(u, p) {
-  if (!verifyAdmin(u, p)) return ContentService
-    .createTextOutput(JSON.stringify({ status: 'unauthorized' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  if (!verifyAdmin(u, p)) return createJsonResponse({ status: 'unauthorized' });
   var vals = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet().getDataRange().getValues();
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'ok', data: vals }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return createJsonResponse({ status: 'ok', data: vals });
 }
 
 function listAdminUsers(u, p) {
-  if (!verifyAdmin(u, p)) return ContentService
-    .createTextOutput(JSON.stringify({ status: 'unauthorized' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  if (!verifyAdmin(u, p)) return createJsonResponse({ status: 'unauthorized' });
   var names = getAdmins().map(function(a) { return a.user; });
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'ok', admins: names }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return createJsonResponse({ status: 'ok', admins: names });
 }
 
 function addAdminUser(u, p, nu, np) {
-  if (!verifyAdmin(u, p)) return ContentService
-    .createTextOutput(JSON.stringify({ status: 'unauthorized' }))
-    .setMimeType(ContentService.MimeType.JSON);
-  if (!nu || !np) return ContentService
-    .createTextOutput(JSON.stringify({ status: 'error', message: 'Champs manquants' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  if (!verifyAdmin(u, p)) return createJsonResponse({ status: 'unauthorized' });
+  if (!nu || !np) return createJsonResponse({ status: 'error', message: 'Champs manquants' });
   var admins = getAdmins();
-  if (admins.some(function(a) { return a.user === nu; })) return ContentService
-    .createTextOutput(JSON.stringify({ status: 'error', message: 'Identifiant déjà existant' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  if (admins.some(function(a) { return a.user === nu; })) return createJsonResponse({ status: 'error', message: 'Identifiant déjà existant' });
   admins.push({ user: nu, passHash: hashPass(np) });
   PropertiesService.getScriptProperties().setProperty(ADMIN_KEY, JSON.stringify(admins));
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'ok' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return createJsonResponse({ status: 'ok' });
+}
+
+// ── Diagnostic : la clé Groq est-elle bien enregistrée ? ────────────────────
+function debugCheckGroqKey() {
+  var ui  = SpreadsheetApp.getUi();
+  var cfg = getAiConfig();
+
+  if (!cfg.groqKey && !cfg.openaiKey) {
+    ui.alert(
+      'Diagnostic clé IA',
+      "Aucune clé trouvée.\n\nAllez dans l'éditeur Apps Script → ⚙ Paramètres du projet → Propriétés du script,"
+        + " et ajoutez une propriété nommée exactement GROQ_API_KEY avec votre clé Groq comme valeur.",
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  if (cfg.groqKey) {
+    var k = cfg.groqKey;
+    var masked = k.length > 8 ? (k.slice(0, 4) + '…' + k.slice(-4)) : '(valeur très courte, suspecte)';
+    ui.alert(
+      'Diagnostic clé IA',
+      'Propriété GROQ_API_KEY trouvée : ' + masked + ' (' + k.length + ' caractères)'
+        + '\nModèle configuré : ' + cfg.groqModel
+        + (k !== k.trim() ? '\n\n⚠ La valeur contient des espaces en début/fin — corrigez-la dans Script Properties.' : ''),
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+
+  ui.alert('Diagnostic clé IA', 'Pas de clé Groq, mais une clé OpenAI est configurée (modèle : ' + cfg.openaiModel + ').', ui.ButtonSet.OK);
 }
 
 // ── Menu Google Sheets ────────────────────────────────────────────────────
@@ -372,6 +819,10 @@ function onOpen() {
     .addItem('Créer un administrateur', 'showCreateAdminDialog')
     .addSeparator()
     .addItem('Liste des administrateurs', 'showAdminsList')
+    .addSeparator()
+    .addItem('Diagnostiquer la clé IA', 'debugCheckGroqKey')
+    .addItem('Tester la synchronisation IA (1 fiche)', 'syncOneCvSummaryTest')
+    .addItem('Synchroniser tous les résumés IA', 'syncAllCvSummaries')
     .addToUi();
 }
 
